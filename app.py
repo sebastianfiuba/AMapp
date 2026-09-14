@@ -3,7 +3,14 @@ import streamlit as st
 from config import APP_TITLE
 from database.db import get_connection, initialize_database
 from database.repository import Repository
-from ui import dashboard, graphs, import_export, iv, measurements, track_vt, workbench, ztc
+import ui.dashboard as dashboard
+import ui.graphs as graphs
+import ui.import_export as import_export
+import ui.iv as iv
+import ui.measurements as measurements
+import ui.track_vt as track_vt
+import ui.workbench as workbench
+import ui.ztc as ztc
 
 
 st.set_page_config(page_title=APP_TITLE, page_icon="📊", layout="wide")

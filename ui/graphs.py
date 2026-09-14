@@ -14,4 +14,4 @@ def render(repository):
     campaign = campaigns.iloc[labels.index(selected)]
     measurements = repository.measurements(int(campaign.id))
     points = {int(row.id): repository.points(int(row.id)) for row in measurements.itertuples()}
-    st.plotly_chart(iv_chart(measurements, points), use_container_width=True)
+    st.plotly_chart(iv_chart(measurements, points), width="stretch")

@@ -50,9 +50,9 @@ def _render_comparison(repository):
     st.caption(f"{len(measurements)} curvas I-V seleccionadas")
     points = {int(row.id): repository.points(int(row.id)) for row in measurements.itertuples()}
     iv_figure = iv_chart(measurements, points)
-    st.plotly_chart(iv_figure, use_container_width=True)
+    st.plotly_chart(iv_figure, width="stretch")
     chart_downloads(iv_figure, "comparacion_iv", "comparison_iv")
-    st.dataframe(measurements[["dispositivo", "campana", "archivo", "fecha", "clase", "estado"]], use_container_width=True, hide_index=True)
+    st.dataframe(measurements[["dispositivo", "campana", "archivo", "fecha", "clase", "estado"]], width="stretch", hide_index=True)
 
     track_frames = []
     for device_id in selected_device_ids:
@@ -64,9 +64,9 @@ def _render_comparison(repository):
         st.subheader("Track Vt de la misma selección")
         track_points = {int(row.id): repository.track_points(int(row.id)) for row in tracks.itertuples()}
         track_figure = track_chart(tracks, track_points)
-        st.plotly_chart(track_figure, use_container_width=True)
+        st.plotly_chart(track_figure, width="stretch")
         chart_downloads(track_figure, "comparacion_track_vt", "comparison_track")
-        st.dataframe(tracks[["dispositivo", "campana", "archivo", "canal", "fecha"]], use_container_width=True, hide_index=True)
+        st.dataframe(tracks[["dispositivo", "campana", "archivo", "canal", "fecha"]], width="stretch", hide_index=True)
     save_name = st.text_input("Nombre de la vista", key="workbench_view_name")
     if st.button("Guardar vista", key="save_workbench_view") and save_name.strip():
         repository.save_workbench_view(save_name, {"devices": selected_device_ids, "campaigns": campaign_ids, "filter_text": filter_text, "states": filter_states, "date": filter_date})
@@ -88,16 +88,16 @@ def _render_device(repository):
     st.metric("Mediciones I-V", len(measurements))
     st.metric("Tracks Vt", len(tracks))
     if not measurements.empty:
-        st.dataframe(measurements[["campana", "archivo", "fecha", "descripcion", "clase", "estado"]], use_container_width=True, hide_index=True)
+        st.dataframe(measurements[["campana", "archivo", "fecha", "descripcion", "clase", "estado"]], width="stretch", hide_index=True)
     if not tracks.empty:
-        st.dataframe(tracks[["campana", "archivo", "canal", "fecha", "source_sheet"]], use_container_width=True, hide_index=True)
+        st.dataframe(tracks[["campana", "archivo", "canal", "fecha", "source_sheet"]], width="stretch", hide_index=True)
         selected_track = st.selectbox("Track Vt", tracks.apply(_label, axis=1).tolist())
         track = tracks.iloc[tracks.apply(_label, axis=1).tolist().index(selected_track)]
         selected_points = repository.track_points(int(track.id))
         st.metric("Duración [s]", f"{selected_points.t.max():.1f}" if not selected_points.empty else "-")
         st.metric("Deriva Vt [V]", f"{selected_points.vt.iloc[-1] - selected_points.vt.iloc[0]:.6g}" if len(selected_points) > 1 else "-")
         figure = track_chart(tracks[tracks.id == track.id], {int(track.id): selected_points})
-        st.plotly_chart(figure, use_container_width=True)
+        st.plotly_chart(figure, width="stretch")
         chart_downloads(figure, "track_vt", "device_track")
     st.divider()
     st.subheader("Editar nombres")
@@ -128,7 +128,7 @@ def _render_matching(repository):
     measurements = measurements.copy()
     measurements["clave"] = measurements.apply(lambda row: re.sub(r"\.ri$", "", str(row.archivo), flags=re.IGNORECASE).lower(), axis=1)
     measurements["campana_destino"] = measurements["campana"]
-    edited = st.data_editor(measurements[["id", "dispositivo", "campana", "archivo", "fecha", "clave", "campana_destino"]], use_container_width=True, hide_index=True, disabled=["id", "dispositivo", "campana", "archivo", "fecha", "clave"])
+    edited = st.data_editor(measurements[["id", "dispositivo", "campana", "archivo", "fecha", "clave", "campana_destino"]], width="stretch", hide_index=True, disabled=["id", "dispositivo", "campana", "archivo", "fecha", "clave"])
     if st.button("Guardar matching masivo", type="primary"):
         errors = []
         for row in edited.itertuples():

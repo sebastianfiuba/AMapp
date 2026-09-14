@@ -46,7 +46,7 @@ def _render_campaign(repository, campaign, campaign_id: int):
         st.metric("VT ZTC", f"{result['vt_ztc']:.6g} V")
         st.metric("I ZTC", format_current(result["i_ztc"]))
         points = {int(row.id): repository.points(int(row.id)) for row in measurements.itertuples()}
-        st.plotly_chart(iv_chart(measurements, points, (result["vt_ztc"], result["i_ztc"])), use_container_width=True)
+        st.plotly_chart(iv_chart(measurements, points, (result["vt_ztc"], result["i_ztc"])), width="stretch")
         rows = []
         for measurement in measurements.itertuples():
             try:
@@ -54,7 +54,7 @@ def _render_campaign(repository, campaign, campaign_id: int):
             except ValueError as error:
                 st.warning(f"{measurement.archivo}: {error}")
         if rows:
-            st.dataframe(rows, use_container_width=True, hide_index=True)
+            st.dataframe(rows, width="stretch", hide_index=True)
 
 
 def _render_evolution(repository, campaigns, labels):
@@ -77,11 +77,11 @@ def _render_evolution(repository, campaigns, labels):
     if not rows:
         return
     frame = pd.DataFrame(rows)
-    st.dataframe(frame.drop(columns=["campana_id"]), use_container_width=True, hide_index=True)
+    st.dataframe(frame.drop(columns=["campana_id"]), width="stretch", hide_index=True)
     figure = go.Figure()
     figure.add_trace(go.Scatter(x=frame["campaña"], y=frame["VT ZTC [V]"], mode="lines+markers", name="VT ZTC"))
     figure.update_layout(template="plotly_white", xaxis_title="Campaña / etapa", yaxis_title="VT ZTC [V]")
-    st.plotly_chart(figure, use_container_width=True)
+    st.plotly_chart(figure, width="stretch")
     st.caption("Las campañas enlazadas en Secuencia se pueden ordenar por etapa para leer este gráfico como antes/después.")
 
 
@@ -102,7 +102,7 @@ def _render_links(repository, campaigns, labels):
             st.success("Secuencia guardada.")
     links = repository.campaign_links()
     if not links.empty:
-        st.dataframe(links[["dispositivo", "anterior", "siguiente", "orden", "motivo"]], use_container_width=True, hide_index=True)
+        st.dataframe(links[["dispositivo", "anterior", "siguiente", "orden", "motivo"]], width="stretch", hide_index=True)
     _render_recommendations(repository, campaigns)
 
 
@@ -127,6 +127,6 @@ def _render_recommendations(repository, campaigns):
                                     "ZTC calculado": f"{has_ztc}/2", "prioridad": score})
     if recommendations:
         frame = pd.DataFrame(recommendations).sort_values("prioridad", ascending=False)
-        st.dataframe(frame.drop(columns="prioridad"), use_container_width=True, hide_index=True)
+        st.dataframe(frame.drop(columns="prioridad"), width="stretch", hide_index=True)
     else:
         st.info("Todavía no hay dos campañas consecutivas del mismo dispositivo con curvas I-V para recomendar.")

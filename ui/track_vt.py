@@ -21,6 +21,6 @@ def render(repository):
     points = {int(row.id): repository.track_points(int(row.id)) for row in tracks.itertuples()}
     figure = track_chart(tracks, points)
     st.caption(f"{len(tracks)} tracks Vt")
-    st.plotly_chart(figure, use_container_width=True)
+    st.plotly_chart(figure, width="stretch")
     chart_downloads(figure, "comparacion_track_vt", "track_page")
-    st.dataframe(tracks[["dispositivo", "campana", "archivo", "canal", "fecha"]], use_container_width=True, hide_index=True)
+    st.dataframe(tracks[["dispositivo", "campana", "archivo", "canal", "fecha"]], width="stretch", hide_index=True)

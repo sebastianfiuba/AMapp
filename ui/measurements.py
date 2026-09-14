@@ -15,5 +15,5 @@ def render(repository):
     measurements = repository.measurements(campaign_id)
     selected = st.selectbox("Medicion", measurements.archivo.tolist())
     row = measurements[measurements.archivo == selected].iloc[0]
-    st.dataframe(row[["dispositivo", "campana", "archivo", "fecha", "descripcion", "clase", "estado"]].to_frame("Valor"), use_container_width=True)
-    st.dataframe(repository.points(int(row.id)), use_container_width=True, hide_index=True)
+    st.dataframe(row[["dispositivo", "campana", "archivo", "fecha", "descripcion", "clase", "estado"]].to_frame("Valor"), width="stretch")
+    st.dataframe(repository.points(int(row.id)), width="stretch", hide_index=True)

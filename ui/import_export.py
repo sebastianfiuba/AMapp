@@ -27,7 +27,7 @@ def render(repository):
         st.write(f"Hojas sin clasificar nuevas: {summary.get('sin_clasificar_nuevos', 0)}")
         if summary["errores"]:
             st.warning("Algunas filas requieren revision.")
-            st.dataframe(summary["errores"], use_container_width=True, hide_index=True)
+            st.dataframe(summary["errores"], width="stretch", hide_index=True)
     st.divider()
     st.subheader("Exportar base completa")
     integrity = export_integrity(repository)
@@ -40,4 +40,4 @@ def render(repository):
     if not unclassified.empty:
         st.subheader("Hojas sin clasificar")
         st.caption("Se conservaron aparte porque no tienen el formato I-V ni Track Vt reconocido.")
-        st.dataframe(unclassified[["archivo_origen", "hoja", "tipo", "filas", "columnas"]], use_container_width=True, hide_index=True)
+        st.dataframe(unclassified[["archivo_origen", "hoja", "tipo", "filas", "columnas"]], width="stretch", hide_index=True)

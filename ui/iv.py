@@ -19,6 +19,6 @@ def render(repository):
     points = {int(row.id): repository.points(int(row.id)) for row in measurements.itertuples()}
     figure = iv_chart(measurements, points)
     st.caption(f"{len(measurements)} curvas I-V")
-    st.plotly_chart(figure, use_container_width=True)
+    st.plotly_chart(figure, width="stretch")
     chart_downloads(figure, "comparacion_iv", "iv_page")
-    st.dataframe(measurements[["dispositivo", "campana", "archivo", "fecha", "clase", "estado"]], use_container_width=True, hide_index=True)
+    st.dataframe(measurements[["dispositivo", "campana", "archivo", "fecha", "clase", "estado"]], width="stretch", hide_index=True)

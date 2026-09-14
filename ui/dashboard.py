@@ -11,6 +11,6 @@ def render(repository):
     measurements = repository.measurements()
     if not measurements.empty:
         summary = measurements.groupby("dispositivo", as_index=False).size().rename(columns={"size": "mediciones"})
-        st.plotly_chart(px.bar(summary, x="dispositivo", y="mediciones", title="Mediciones por dispositivo"), use_container_width=True)
+        st.plotly_chart(px.bar(summary, x="dispositivo", y="mediciones", title="Mediciones por dispositivo"), width="stretch")
     else:
         st.info("Importa un Excel para comenzar a explorar mediciones.")
