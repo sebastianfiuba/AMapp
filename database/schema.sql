@@ -82,3 +82,13 @@ CREATE TABLE IF NOT EXISTS analisis_ztc (
     i_ztc REAL NOT NULL,
     UNIQUE(campana_id)
 );
+
+CREATE TABLE IF NOT EXISTS relaciones_campana (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    anterior_id INTEGER NOT NULL REFERENCES campanas(id) ON DELETE CASCADE,
+    siguiente_id INTEGER NOT NULL REFERENCES campanas(id) ON DELETE CASCADE,
+    orden INTEGER NOT NULL DEFAULT 1,
+    motivo TEXT,
+    UNIQUE(anterior_id, siguiente_id),
+    CHECK(anterior_id <> siguiente_id)
+);

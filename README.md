@@ -29,7 +29,9 @@ La identificación de dispositivos es genérica: se toma el primer bloque numér
 3. Consultar las curvas y ejecutar `Analisis ZTC`.
 4. Descargar la base y resultados desde `Importar / Exportar`.
 
-El menú `Workbench` incluye un comparador de múltiples dispositivos y campañas, un explorador de todas las curvas I-V y Track Vt de un dispositivo, y un panel de matching para reasignar una medición a la campaña correcta y exportar el estado en CSV.
+La navegación separa `I-V`, `Track Vt` y `Análisis ZTC`. El menú `Workbench` incluye un comparador de múltiples dispositivos y campañas, un explorador de todas las curvas I-V y Track Vt de un dispositivo, y un panel de matching para reasignar una medición a la campaña correcta y exportar el estado en CSV.
+
+`Análisis ZTC` permite calcular una campaña individual, calcular la evolución de varias campañas y definir una secuencia anterior/siguiente con motivo del tratamiento. También propone pares de campañas del mismo dispositivo que tienen suficientes curvas I-V y resultados ZTC para comparar.
 
 El análisis usa spline cúbica sin extrapolar. Con varias mediciones busca el mínimo de `Imax(V) - Imin(V)` en el intervalo común y promedia todas las curvas. Con una sola medición calcula el punto de la curva individual.
 

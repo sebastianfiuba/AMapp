@@ -16,6 +16,7 @@ def export_excel(repository: Repository) -> bytes:
         repository.all_points().to_excel(writer, index=False, sheet_name="Puntos V I")
         repository.tracks().to_excel(writer, index=False, sheet_name="Tracks Vt")
         repository.all_track_points().to_excel(writer, index=False, sheet_name="Puntos Track Vt")
+        repository.campaign_links().to_excel(writer, index=False, sheet_name="Secuencia Campanas")
         repository.unclassified().to_excel(writer, index=False, sheet_name="Sin clasificar")
     return output.getvalue()
 

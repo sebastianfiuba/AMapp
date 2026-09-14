@@ -148,6 +148,24 @@ class Repository:
             (campaign_id, vt, current),
         )
 
+    def link_campaigns(self, previous_id: int, next_id: int, order: int = 1, reason: str = "") -> None:
+        self.connection.execute(
+            """INSERT INTO relaciones_campana(anterior_id, siguiente_id, orden, motivo)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(anterior_id, siguiente_id) DO UPDATE SET orden=excluded.orden, motivo=excluded.motivo""",
+            (previous_id, next_id, order, reason.strip()),
+        )
+
+    def campaign_links(self) -> pd.DataFrame:
+        return self._query("""SELECT r.*, a.numero AS anterior, b.numero AS siguiente,
+            da.nombre AS dispositivo
+            FROM relaciones_campana r JOIN campanas a ON a.id=r.anterior_id
+            JOIN campanas b ON b.id=r.siguiente_id JOIN dispositivos da ON da.id=a.dispositivo_id
+            ORDER BY da.nombre, r.orden, r.id""")
+
+    def delete_campaign_link(self, link_id: int) -> None:
+        self.connection.execute("DELETE FROM relaciones_campana WHERE id = ?", (link_id,))
+
     def _query(self, sql: str, params: tuple = ()) -> pd.DataFrame:
         return pd.read_sql_query(sql, self.connection, params=params)
 
