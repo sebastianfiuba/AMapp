@@ -1,6 +1,6 @@
 # AMapp
 
-Aplicación Streamlit para importar, almacenar, visualizar y analizar mediciones eléctricas I-V de dispositivos electrónicos.
+Aplicación Streamlit para importar, almacenar y visualizar mediciones eléctricas I-V y tracks Vt de dispositivos electrónicos.
 
 ## Instalación local
 
@@ -18,12 +18,18 @@ El archivo `.xlsx` debe contener una hoja plana con las columnas obligatorias `d
 
 Las filas inválidas se informan sin detener la importación. Las mediciones ya existentes en la misma campaña y archivo se ignoran.
 
+También se aceptan libros con hojas de mediciones exportadas por el instrumento. Las hojas con columnas `V` e `I` se importan como curvas I-V. Las hojas con bloques `t [s]` y `Vt [V]` se importan como Track Vt, separados por dispositivo y canal. Los Track Vt se visualizan y exportan, pero no participan todavía en el análisis ZTC.
+
+La identificación de dispositivos es genérica: se toma el primer bloque numérico posterior a un prefijo que contenga letras, se guarda el `tag`, el `numero` y el nombre canónico. Las hojas que no sean I-V ni Track Vt se conservan en `Sin clasificar` para revisión y exportación posterior.
+
 ## Uso
 
 1. Subir el Excel desde `Importar / Exportar`.
 2. Seleccionar dispositivo, campaña y medición en `Mediciones`.
 3. Consultar las curvas y ejecutar `Analisis ZTC`.
 4. Descargar la base y resultados desde `Importar / Exportar`.
+
+El menú `Workbench` incluye un comparador de múltiples dispositivos y campañas, un explorador de todas las curvas I-V y Track Vt de un dispositivo, y un panel de matching para reasignar una medición a la campaña correcta y exportar el estado en CSV.
 
 El análisis usa spline cúbica sin extrapolar. Con varias mediciones busca el mínimo de `Imax(V) - Imin(V)` en el intervalo común y promedia todas las curvas. Con una sola medición calcula el punto de la curva individual.
 

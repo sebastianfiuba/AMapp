@@ -22,3 +22,8 @@ def initialize_database(path: Path | str = DATABASE_PATH) -> None:
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_mediciones_hash ON mediciones(measurement_hash) "
                 "WHERE measurement_hash IS NOT NULL"
             )
+        device_columns = {row["name"] for row in connection.execute("PRAGMA table_info(dispositivos)")}
+        if "tag" not in device_columns:
+            connection.execute("ALTER TABLE dispositivos ADD COLUMN tag TEXT")
+        if "numero" not in device_columns:
+            connection.execute("ALTER TABLE dispositivos ADD COLUMN numero TEXT")

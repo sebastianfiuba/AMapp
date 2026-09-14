@@ -7,7 +7,7 @@ from typing import BinaryIO
 
 import pandas as pd
 
-from database.repository import Repository
+from database.repository import Repository, _device_parts
 
 ALIASES = {
     "dispositivo": ["dispositivo", "device", "nombre dispositivo", "dut"],
@@ -18,6 +18,8 @@ ALIASES = {
     "fecha": ["fecha", "date"], "descripcion": ["descripcion", "descripción", "description"],
     "clase": ["clase", "class"], "estado": ["estado", "state"],
 }
+TRACK_TIME_HEADERS = {"t s", "tiempo s", "time s", "t"}
+TRACK_VOLTAGE_HEADERS = {"vt v", "v t v", "v t", "vt"}
 KEY_ALIASES = {_normalized_alias: key for key, aliases in ALIASES.items() for _normalized_alias in [re.sub(r"[^a-z0-9]+", " ", _alias.strip().lower()).strip() for _alias in aliases]}
 
 
@@ -56,9 +58,10 @@ def detect_vi_columns(frame: pd.DataFrame) -> dict[str, int]:
 
 def extract_device(*values: object) -> str:
     for value in values:
-        match = re.search(r"2\s*ndn\s*0*(\d+)", str(value or ""), re.IGNORECASE)
-        if match:
-            return f"2NDN{int(match.group(1))}"
+        text = _clean(value)
+        if text:
+            _, _, canonical = _device_parts(text)
+            return canonical
     return ""
 
 
@@ -110,6 +113,38 @@ def _points_from_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return points.dropna().drop_duplicates().reset_index(drop=True)
 
 
+def _track_blocks(frame: pd.DataFrame) -> list[dict[str, object]]:
+    blocks = []
+    for header_row in range(min(len(frame), 15)):
+        for time_index in range(max(0, frame.shape[1] - 1)):
+            time_header = _normalized(frame.iloc[header_row, time_index])
+            voltage_header = _normalized(frame.iloc[header_row, time_index + 1])
+            if time_header not in TRACK_TIME_HEADERS or voltage_header not in TRACK_VOLTAGE_HEADERS:
+                continue
+            values = frame.iloc[header_row + 1:, [time_index, time_index + 1]].copy()
+            values.columns = ["t", "vt"]
+            values["t"] = pd.to_numeric(values["t"], errors="coerce")
+            values["vt"] = pd.to_numeric(values["vt"], errors="coerce")
+            points = values.dropna().drop_duplicates().reset_index(drop=True)
+            if points.empty:
+                continue
+            channel = _clean(frame.iloc[header_row - 1, time_index]) if header_row else ""
+            device = ""
+            raw_device = ""
+            for row_index in range(header_row - 1, -1, -1):
+                candidate = _clean(frame.iloc[row_index, time_index])
+                if extract_device(candidate):
+                    device = extract_device(candidate)
+                    break
+                if row_index == header_row - 3 and candidate and "volver" not in _normalized(candidate):
+                    raw_device = candidate
+            if not device:
+                device = extract_device(frame.iloc[:, time_index].dropna().tolist()) or raw_device or "TRACK SIN IDENTIFICAR"
+            date = _clean(frame.iloc[header_row - 2, time_index]) if header_row >= 2 else ""
+            blocks.append({"device": device, "channel": channel or f"Track {time_index + 1}", "date": date, "points": points})
+    return blocks
+
+
 def calculate_measurement_hash(device: str, measurement: str, measurement_date: str, points: pd.DataFrame) -> str:
     values = [f"{float(row.v):.15g},{float(row.i):.15g}" for row in points.itertuples()]
     payload = "|".join((_normalized(device), _normalized(measurement), _normalized(measurement_date), *values))
@@ -158,8 +193,66 @@ def _import_frames(frames: list[tuple[str, pd.DataFrame]], repository: Repositor
     return stats
 
 
+def _import_track_frames(frames: list[tuple[str, pd.DataFrame]], repository: Repository) -> dict[str, object]:
+    tracks_new = 0
+    track_points_new = 0
+    errors = []
+    for sheet_name, frame in frames:
+        for block in _track_blocks(frame):
+            try:
+                device = str(block["device"])
+                if not device:
+                    raise ValueError("no se pudo identificar dispositivo del Track Vt")
+                device_id = repository.add_device(device)
+                campaign_id = repository.add_campaign(device_id, sheet_name)
+                track_id, created = repository.add_track({
+                    "dispositivo_id": device_id,
+                    "campana_id": campaign_id,
+                    "archivo": sheet_name,
+                    "canal": str(block["channel"]),
+                    "fecha": str(block["date"]),
+                    "descripcion": "Track Vt",
+                    "source_sheet": sheet_name,
+                })
+                track_points_new += repository.add_track_points(track_id, block["points"])
+                tracks_new += int(created)
+            except (TypeError, ValueError) as error:
+                errors.append({"Archivo": sheet_name, "Fila": "-", "Problema": str(error)})
+    repository.connection.commit()
+    return {"tracks_nuevos": tracks_new, "track_points_nuevos": track_points_new, "errores_track": errors}
+
+
+def _import_unclassified_frames(frames: list[tuple[str, pd.DataFrame]], source_file: str, repository: Repository) -> int:
+    imported = 0
+    for sheet_name, frame in frames:
+        if not _points_from_frame(frame).empty or _track_blocks(frame):
+            continue
+        payload = frame.to_json(orient="split", force_ascii=False, date_format="iso")
+        content_hash = hashlib.sha256(f"{sheet_name}|{payload}".encode("utf-8")).hexdigest()
+        imported += int(repository.add_unclassified({
+            "archivo_origen": source_file,
+            "hoja": sheet_name,
+            "tipo": "sin clasificar",
+            "filas": len(frame),
+            "columnas": ", ".join(str(column) for column in frame.columns),
+            "datos_json": payload,
+            "contenido_hash": content_hash,
+        }))
+    repository.connection.commit()
+    return imported
+
+
 def import_excel(uploaded_file: BinaryIO, repository: Repository) -> dict:
-    return _import_frames(list(pd.read_excel(uploaded_file, sheet_name=None, header=None).items()), repository)
+    frames = list(pd.read_excel(uploaded_file, sheet_name=None, header=None).items())
+    source_file = getattr(uploaded_file, "name", "archivo.xlsx")
+    summary = _import_frames(frames, repository)
+    track_summary = _import_track_frames(frames, repository)
+    summary["sin_clasificar_nuevos"] = _import_unclassified_frames(frames, source_file, repository)
+    summary["tracks_nuevos"] = track_summary["tracks_nuevos"]
+    summary["track_points_nuevos"] = track_summary["track_points_nuevos"]
+    summary["errores"].extend(track_summary["errores_track"])
+    summary["ignorados"] = len(summary["errores"])
+    return summary
 
 
 def import_measurement(uploaded_file: BinaryIO, repository: Repository) -> dict:

@@ -1,9 +1,24 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 from typing import Any
 
 import pandas as pd
+
+
+def _device_parts(name: str) -> tuple[str, str, str]:
+    import re
+
+    value = str(name or "").strip()
+    for match in re.finditer(r"\d+", value):
+        tag_value = value[:match.start()]
+        if not re.search(r"[A-Za-z]", tag_value):
+            continue
+        tag = tag_value.upper()
+        number = str(int(match.group(0)))
+        return tag, number, f"{tag}{number}"
+    return value.upper(), "", value.upper()
 
 
 class Repository:
@@ -13,10 +28,25 @@ class Repository:
         self.connection = connection
         self.last_measurement_updated = False
 
-    def add_device(self, name: str) -> int:
-        self.connection.execute("INSERT OR IGNORE INTO dispositivos(nombre) VALUES (?)", (name,))
+    def add_device(self, name: str, tag: str = "", number: str = "") -> int:
+        parsed_tag, parsed_number, parsed_name = _device_parts(name)
+        tag = tag or parsed_tag
+        number = number or parsed_number
+        name = parsed_name
+        self.connection.execute("INSERT OR IGNORE INTO dispositivos(nombre, tag, numero) VALUES (?, ?, ?)", (name, tag, number))
+        self.connection.execute(
+            "UPDATE dispositivos SET tag = COALESCE(NULLIF(tag, ''), ?), numero = COALESCE(NULLIF(numero, ''), ?) WHERE nombre = ?",
+            (tag, number, name),
+        )
         row = self.connection.execute("SELECT id FROM dispositivos WHERE nombre = ?", (name,)).fetchone()
         return int(row["id"])
+
+    def rename_device(self, device_id: int, name: str) -> None:
+        tag, number, canonical = _device_parts(name)
+        self.connection.execute("UPDATE dispositivos SET nombre = ?, tag = ?, numero = ? WHERE id = ?", (canonical, tag, number, device_id))
+
+    def rename_campaign(self, campaign_id: int, number: str) -> None:
+        self.connection.execute("UPDATE campanas SET numero = ? WHERE id = ?", (number.strip(), campaign_id))
 
     def add_campaign(self, device_id: int, number: str) -> int:
         self.connection.execute(
@@ -81,6 +111,36 @@ class Repository:
         self.connection.executemany("INSERT OR IGNORE INTO puntos(medicion_id, v, i) VALUES (?, ?, ?)", rows)
         return self.connection.total_changes - before
 
+    def add_track(self, values: dict[str, Any]) -> tuple[int, bool]:
+        existing = self.connection.execute(
+            "SELECT id FROM tracks_vt WHERE dispositivo_id = ? AND archivo = ? AND canal = ?",
+            (values["dispositivo_id"], values["archivo"], values["canal"]),
+        ).fetchone()
+        if existing:
+            track_id = int(existing["id"])
+            self.connection.execute(
+                """UPDATE tracks_vt
+                   SET campana_id = COALESCE(NULLIF(:campana_id, ''), campana_id),
+                       fecha = COALESCE(NULLIF(:fecha, ''), fecha),
+                       descripcion = COALESCE(NULLIF(:descripcion, ''), descripcion),
+                       source_sheet = COALESCE(NULLIF(:source_sheet, ''), source_sheet)
+                   WHERE id = :id""",
+                {**values, "id": track_id},
+            )
+            return track_id, False
+        cursor = self.connection.execute(
+            """INSERT INTO tracks_vt(dispositivo_id, campana_id, archivo, canal, fecha, descripcion, source_sheet)
+               VALUES (:dispositivo_id, :campana_id, :archivo, :canal, :fecha, :descripcion, :source_sheet)""",
+            values,
+        )
+        return int(cursor.lastrowid), True
+
+    def add_track_points(self, track_id: int, points: pd.DataFrame) -> int:
+        rows = {(track_id, float(row.t), float(row.vt)) for row in points.itertuples()}
+        before = self.connection.total_changes
+        self.connection.executemany("INSERT OR IGNORE INTO puntos_track_vt(track_id, t, vt) VALUES (?, ?, ?)", rows)
+        return self.connection.total_changes - before
+
     def save_ztc(self, campaign_id: int, vt: float, current: float) -> None:
         self.connection.execute(
             """INSERT INTO analisis_ztc(campana_id, vt_ztc, i_ztc) VALUES (?, ?, ?)
@@ -92,7 +152,7 @@ class Repository:
         return pd.read_sql_query(sql, self.connection, params=params)
 
     def devices(self) -> pd.DataFrame:
-        return self._query("SELECT id, nombre FROM dispositivos ORDER BY nombre")
+        return self._query("SELECT id, nombre, tag, numero FROM dispositivos ORDER BY nombre")
 
     def campaigns(self, device_id: int | None = None) -> pd.DataFrame:
         sql = "SELECT c.id, c.dispositivo_id, d.nombre AS dispositivo, c.numero FROM campanas c JOIN dispositivos d ON d.id=c.dispositivo_id"
@@ -112,6 +172,30 @@ class Repository:
             params = (campaign_id,)
         return self._query(sql + " ORDER BY m.id", params)
 
+    def measurements_for_devices(self, device_ids: list[int]) -> pd.DataFrame:
+        if not device_ids:
+            return pd.DataFrame()
+        placeholders = ",".join("?" for _ in device_ids)
+        return self._query(
+            f"""SELECT m.*, d.nombre AS dispositivo, c.numero AS campana
+                FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
+                JOIN campanas c ON c.id=m.campana_id
+                WHERE m.dispositivo_id IN ({placeholders}) ORDER BY d.nombre, c.numero, m.archivo""",
+            tuple(device_ids),
+        )
+
+    def measurements_for_campaigns(self, campaign_ids: list[int]) -> pd.DataFrame:
+        if not campaign_ids:
+            return pd.DataFrame()
+        placeholders = ",".join("?" for _ in campaign_ids)
+        return self._query(
+            f"""SELECT m.*, d.nombre AS dispositivo, c.numero AS campana
+                FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
+                JOIN campanas c ON c.id=m.campana_id
+                WHERE m.campana_id IN ({placeholders}) ORDER BY d.nombre, c.numero, m.archivo""",
+            tuple(campaign_ids),
+        )
+
     def points(self, measurement_id: int) -> pd.DataFrame:
         return self._query("SELECT v, i FROM puntos WHERE medicion_id = ? ORDER BY v", (measurement_id,))
 
@@ -120,8 +204,69 @@ class Repository:
             FROM puntos p JOIN mediciones m ON m.id=p.medicion_id JOIN dispositivos d ON d.id=m.dispositivo_id
             JOIN campanas c ON c.id=m.campana_id ORDER BY p.id""")
 
+    def tracks(self, device_id: int | None = None, campaign_ids: list[int] | None = None) -> pd.DataFrame:
+        sql = """SELECT t.*, d.nombre AS dispositivo, c.numero AS campana
+                  FROM tracks_vt t JOIN dispositivos d ON d.id=t.dispositivo_id
+                  JOIN campanas c ON c.id=t.campana_id"""
+        clauses = []
+        params: list[Any] = []
+        if device_id is not None:
+            clauses.append("t.dispositivo_id = ?")
+            params.append(device_id)
+        if campaign_ids:
+            placeholders = ",".join("?" for _ in campaign_ids)
+            clauses.append(f"t.campana_id IN ({placeholders})")
+            params.extend(campaign_ids)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        return self._query(sql + " ORDER BY d.nombre, c.numero, t.archivo, t.canal", tuple(params))
+
+    def track_points(self, track_id: int) -> pd.DataFrame:
+        return self._query("SELECT t, vt FROM puntos_track_vt WHERE track_id = ? ORDER BY t", (track_id,))
+
+    def all_track_points(self) -> pd.DataFrame:
+        return self._query("""SELECT p.*, t.archivo, t.canal, t.campana_id, t.source_sheet,
+            d.nombre AS dispositivo, c.numero AS campana
+            FROM puntos_track_vt p JOIN tracks_vt t ON t.id=p.track_id
+            JOIN dispositivos d ON d.id=t.dispositivo_id JOIN campanas c ON c.id=t.campana_id
+            ORDER BY p.id""")
+
+    def update_measurement_metadata(self, measurement_id: int, values: dict[str, Any]) -> None:
+        allowed = {"dispositivo_id", "campana_id", "archivo", "fecha", "descripcion", "clase", "estado"}
+        updates = {key: value for key, value in values.items() if key in allowed}
+        if not updates:
+            return
+        assignments = ", ".join(f"{key} = :{key}" for key in updates)
+        updates["id"] = measurement_id
+        self.connection.execute(f"UPDATE mediciones SET {assignments} WHERE id = :id", updates)
+
+    def save_workbench_view(self, name: str, configuration: dict[str, Any]) -> None:
+        self.connection.execute(
+            "INSERT INTO vistas_workbench(nombre, configuracion) VALUES (?, ?) "
+            "ON CONFLICT(nombre) DO UPDATE SET configuracion=excluded.configuracion, creada_en=CURRENT_TIMESTAMP",
+            (name.strip(), json.dumps(configuration, ensure_ascii=False)),
+        )
+
+    def workbench_views(self) -> pd.DataFrame:
+        return self._query("SELECT id, nombre, configuracion, creada_en FROM vistas_workbench ORDER BY nombre")
+
+    def delete_workbench_view(self, view_id: int) -> None:
+        self.connection.execute("DELETE FROM vistas_workbench WHERE id = ?", (view_id,))
+
+    def add_unclassified(self, values: dict[str, Any]) -> bool:
+        cursor = self.connection.execute(
+            """INSERT OR IGNORE INTO datos_sin_clasificar
+               (archivo_origen, hoja, tipo, filas, columnas, datos_json, contenido_hash)
+               VALUES (:archivo_origen, :hoja, :tipo, :filas, :columnas, :datos_json, :contenido_hash)""",
+            values,
+        )
+        return cursor.rowcount > 0
+
+    def unclassified(self) -> pd.DataFrame:
+        return self._query("SELECT id, archivo_origen, hoja, tipo, filas, columnas, datos_json, contenido_hash FROM datos_sin_clasificar ORDER BY hoja")
+
     def counts(self) -> dict[str, int]:
-        tables = {"dispositivos": "devices", "campanas": "campaigns", "mediciones": "measurements", "puntos": "points", "analisis_ztc": "ztc"}
+        tables = {"dispositivos": "devices", "campanas": "campaigns", "mediciones": "measurements", "puntos": "points", "tracks_vt": "tracks", "puntos_track_vt": "track_points", "datos_sin_clasificar": "unclassified", "analisis_ztc": "ztc"}
         return {label: int(self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]) for table, label in tables.items()}
 
     def ztc_results(self) -> pd.DataFrame:

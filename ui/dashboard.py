@@ -5,8 +5,8 @@ import streamlit as st
 def render(repository):
     st.title("Dashboard")
     counts = repository.counts()
-    columns = st.columns(5)
-    for column, (label, value) in zip(columns, [("Dispositivos", counts["devices"]), ("Campanas", counts["campaigns"]), ("Mediciones", counts["measurements"]), ("Puntos", counts["points"]), ("Analisis ZTC", counts["ztc"])]):
+    columns = st.columns(8)
+    for column, (label, value) in zip(columns, [("Dispositivos", counts["devices"]), ("Campanas", counts["campaigns"]), ("Mediciones I-V", counts["measurements"]), ("Puntos I-V", counts["points"]), ("Tracks Vt", counts["tracks"]), ("Puntos Track", counts["track_points"]), ("Sin clasificar", counts["unclassified"]), ("Analisis ZTC", counts["ztc"])]):
         column.metric(label, value)
     measurements = repository.measurements()
     if not measurements.empty:
