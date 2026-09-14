@@ -11,6 +11,7 @@ class Repository:
 
     def __init__(self, connection: sqlite3.Connection):
         self.connection = connection
+        self.last_measurement_updated = False
 
     def add_device(self, name: str) -> int:
         self.connection.execute("INSERT OR IGNORE INTO dispositivos(nombre) VALUES (?)", (name,))
@@ -28,23 +29,57 @@ class Repository:
         return int(row["id"])
 
     def add_measurement(self, values: dict[str, Any]) -> tuple[int, bool]:
-        existing = self.connection.execute(
-            "SELECT id FROM mediciones WHERE campana_id = ? AND archivo = ?",
-            (values["campana_id"], values["archivo"]),
-        ).fetchone()
+        self.last_measurement_updated = False
+        existing = None
+        if values.get("measurement_hash"):
+            existing = self.connection.execute(
+                "SELECT id FROM mediciones WHERE measurement_hash = ?",
+                (values["measurement_hash"],),
+            ).fetchone()
+        if not existing:
+            existing = self.connection.execute(
+                "SELECT id FROM mediciones WHERE dispositivo_id = ? AND archivo = ?",
+                (values["dispositivo_id"], values["archivo"]),
+            ).fetchone()
         if existing:
-            return int(existing["id"]), False
+            measurement_id = int(existing["id"])
+            current = self.connection.execute("SELECT * FROM mediciones WHERE id = ?", (measurement_id,)).fetchone()
+            incoming_campaign = self.connection.execute(
+                "SELECT numero FROM campanas WHERE id = ?", (values["campana_id"],)
+            ).fetchone()
+            current_campaign = self.connection.execute(
+                "SELECT numero FROM campanas WHERE id = ?", (current["campana_id"],)
+            ).fetchone()
+            if incoming_campaign and current_campaign and current_campaign["numero"] == "sin asignar" and incoming_campaign["numero"] != "sin asignar":
+                self.connection.execute(
+                    "UPDATE mediciones SET campana_id = ? WHERE id = ?",
+                    (values["campana_id"], measurement_id),
+                )
+                self.last_measurement_updated = True
+            updates = {
+                key: value for key, value in values.items()
+                if key in {"fecha", "descripcion", "clase", "estado", "measurement_hash"}
+                and value not in (None, "", "nan", "NaT")
+                and not current[key]
+            }
+            if updates:
+                assignments = ", ".join(f"{key} = :{key}" for key in updates)
+                updates["id"] = measurement_id
+                self.connection.execute(f"UPDATE mediciones SET {assignments} WHERE id = :id", updates)
+                self.last_measurement_updated = True
+            return measurement_id, False
         cursor = self.connection.execute(
-            """INSERT INTO mediciones(dispositivo_id, campana_id, archivo, fecha, descripcion, clase, estado)
-               VALUES (:dispositivo_id, :campana_id, :archivo, :fecha, :descripcion, :clase, :estado)""",
+            """INSERT INTO mediciones(dispositivo_id, campana_id, archivo, fecha, descripcion, clase, estado, measurement_hash)
+               VALUES (:dispositivo_id, :campana_id, :archivo, :fecha, :descripcion, :clase, :estado, :measurement_hash)""",
             values,
         )
         return int(cursor.lastrowid), True
 
     def add_points(self, measurement_id: int, points: pd.DataFrame) -> int:
-        rows = [(measurement_id, float(row.v), float(row.i)) for row in points.itertuples()]
-        self.connection.executemany("INSERT INTO puntos(medicion_id, v, i) VALUES (?, ?, ?)", rows)
-        return len(rows)
+        rows = {(measurement_id, float(row.v), float(row.i)) for row in points.itertuples()}
+        before = self.connection.total_changes
+        self.connection.executemany("INSERT OR IGNORE INTO puntos(medicion_id, v, i) VALUES (?, ?, ?)", rows)
+        return self.connection.total_changes - before
 
     def save_ztc(self, campaign_id: int, vt: float, current: float) -> None:
         self.connection.execute(

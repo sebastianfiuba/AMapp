@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS mediciones (
     descripcion TEXT,
     clase TEXT,
     estado TEXT,
+    measurement_hash TEXT UNIQUE,
     UNIQUE(campana_id, archivo)
 );
 
@@ -30,6 +31,9 @@ CREATE TABLE IF NOT EXISTS puntos (
     v REAL NOT NULL,
     i REAL NOT NULL
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_puntos_medicion_vi
+    ON puntos(medicion_id, v, i);
 
 CREATE TABLE IF NOT EXISTS analisis_ztc (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

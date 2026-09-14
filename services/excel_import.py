@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import re
-from datetime import date
 from typing import BinaryIO
 
 import pandas as pd
@@ -17,66 +18,165 @@ ALIASES = {
     "fecha": ["fecha", "date"], "descripcion": ["descripcion", "descripción", "description"],
     "clase": ["clase", "class"], "estado": ["estado", "state"],
 }
+KEY_ALIASES = {_normalized_alias: key for key, aliases in ALIASES.items() for _normalized_alias in [re.sub(r"[^a-z0-9]+", " ", _alias.strip().lower()).strip() for _alias in aliases]}
 
 
 def _normalized(value: object) -> str:
-    text = str(value).strip().lower()
-    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+    return re.sub(r"[^a-z0-9]+", " ", str(value).strip().lower()).strip()
 
 
-def _find_columns(frame: pd.DataFrame) -> dict[str, str]:
-    normalized = {_normalized(column): column for column in frame.columns}
-    found = {}
-    for target, aliases in ALIASES.items():
-        for alias in aliases:
-            if _normalized(alias) in normalized:
-                found[target] = normalized[_normalized(alias)]
-                break
-    return found
+def _clean(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat(sep=" ")
+    return str(value).strip()
+
+
+def _measurement_key(value: object) -> str:
+    return _normalized(re.sub(r"\.ri$", "", _clean(value)))
+
+
+def _find_columns(frame: pd.DataFrame) -> dict[str, int]:
+    fallback = {}
+    for header_row in range(min(len(frame), 30)):
+        found = {KEY_ALIASES[_normalized(value)]: index for index, value in enumerate(frame.iloc[header_row]) if _normalized(value) in KEY_ALIASES}
+        if found:
+            found["__header_row"] = header_row
+            if {"v", "i"} <= found.keys() or {"dispositivo", "medicion"} <= found.keys():
+                return found
+            fallback = found
+    return fallback
+
+
+def detect_vi_columns(frame: pd.DataFrame) -> dict[str, int]:
+    columns = _find_columns(frame)
+    return {key: columns[key] for key in ("v", "i", "__header_row") if key in columns} if {"v", "i"} <= columns.keys() else {}
+
+
+def extract_device(*values: object) -> str:
+    for value in values:
+        match = re.search(r"2\s*ndn\s*0*(\d+)", str(value or ""), re.IGNORECASE)
+        if match:
+            return f"2NDN{int(match.group(1))}"
+    return ""
+
+
+def extract_metadata(frame: pd.DataFrame, sheet_name: str, filename: str = "") -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    for row in frame.itertuples(index=False, name=None):
+        if len(row) >= 2:
+            key = KEY_ALIASES.get(_normalized(row[0]))
+            if key and key not in metadata:
+                metadata[key] = _clean(row[1])
+    columns = _find_columns(frame)
+    if "__header_row" in columns:
+        for key, index in columns.items():
+            if key not in {"__header_row", "v", "i"} and key not in metadata and index < frame.shape[1] and columns["__header_row"] + 1 < len(frame):
+                metadata[key] = _clean(frame.iloc[columns["__header_row"] + 1, index])
+    metadata["dispositivo"] = extract_device(metadata.get("dispositivo"), sheet_name, filename)
+    metadata["medicion"] = metadata.get("medicion") or filename or sheet_name
+    metadata["campana"] = metadata.get("campana") or "sin asignar"
+    return metadata
+
+
+def _metadata_catalog(frames: list[tuple[str, pd.DataFrame]]) -> dict[str, dict[str, str]]:
+    catalog: dict[str, dict[str, str]] = {}
+    for _, frame in frames:
+        columns = _find_columns(frame)
+        if not {"dispositivo", "medicion"} <= columns.keys():
+            continue
+        row_start = columns["__header_row"] + 1
+        for row in frame.iloc[row_start:].itertuples(index=False, name=None):
+            row_data = {
+                key: _clean(row[index])
+                for key, index in columns.items()
+                if key != "__header_row" and key not in {"v", "i"} and index < len(row)
+            }
+            measurement = row_data.get("medicion")
+            if measurement:
+                catalog[_measurement_key(measurement)] = row_data
+    return catalog
+
+
+def _points_from_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    columns = detect_vi_columns(frame)
+    if not columns:
+        return pd.DataFrame(columns=["v", "i"])
+    points = frame.iloc[columns["__header_row"] + 1:, [columns["v"], columns["i"]]].copy()
+    points.columns = ["v", "i"]
+    points["v"] = pd.to_numeric(points["v"], errors="coerce")
+    points["i"] = pd.to_numeric(points["i"], errors="coerce")
+    return points.dropna().drop_duplicates().reset_index(drop=True)
+
+
+def calculate_measurement_hash(device: str, measurement: str, measurement_date: str, points: pd.DataFrame) -> str:
+    values = [f"{float(row.v):.15g},{float(row.i):.15g}" for row in points.itertuples()]
+    payload = "|".join((_normalized(device), _normalized(measurement), _normalized(measurement_date), *values))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _import_one(metadata: dict[str, str], points: pd.DataFrame, repository: Repository, stats: dict[str, int]) -> None:
+    device = extract_device(metadata.get("dispositivo"), metadata.get("medicion"))
+    measurement = _clean(metadata.get("medicion"))
+    if not device or not measurement:
+        raise ValueError("no se pudo identificar dispositivo o medicion")
+    device_id = repository.add_device(device)
+    campaign_id = repository.add_campaign(device_id, metadata.get("campana", "sin asignar"))
+    measurement_date = _clean(metadata.get("fecha"))
+    values = {"dispositivo_id": device_id, "campana_id": campaign_id, "archivo": measurement, "fecha": measurement_date,
+              "descripcion": _clean(metadata.get("descripcion")), "clase": _clean(metadata.get("clase")), "estado": _clean(metadata.get("estado")),
+              "measurement_hash": calculate_measurement_hash(device, measurement, measurement_date, points)}
+    measurement_id, created = repository.add_measurement(values)
+    added_points = repository.add_points(measurement_id, points)
+    stats["mediciones_nuevas"] += int(created)
+    stats["ya_existentes"] += int(not created)
+    stats["mediciones_actualizadas"] += int(repository.last_measurement_updated)
+    stats["puntos_nuevos"] += added_points
+    stats["duplicados_evitados"] += int(not created) + max(0, len(points) - added_points)
+
+
+def _import_frames(frames: list[tuple[str, pd.DataFrame]], repository: Repository) -> dict:
+    stats = {"mediciones_nuevas": 0, "mediciones_actualizadas": 0, "ya_existentes": 0, "duplicados_evitados": 0, "puntos_nuevos": 0}
+    errors = []
+    catalog = _metadata_catalog(frames)
+    for sheet_name, frame in frames:
+        metadata = extract_metadata(frame, sheet_name)
+        points = _points_from_frame(frame)
+        try:
+            if not points.empty:
+                catalog_metadata = catalog.get(_measurement_key(metadata.get("medicion", sheet_name)), {})
+                metadata = {**catalog_metadata, **metadata}
+                if metadata.get("campana") == "sin asignar" and catalog_metadata.get("campana"):
+                    metadata["campana"] = catalog_metadata["campana"]
+                _import_one(metadata, points, repository, stats)
+        except (TypeError, ValueError) as error:
+            errors.append({"Archivo": sheet_name, "Fila": "-", "Problema": str(error)})
+    repository.connection.commit()
+    stats.update({"errores": errors, "dispositivos": len(repository.devices()), "campanas": len(repository.campaigns()),
+                  "mediciones": stats["mediciones_nuevas"], "puntos": stats["puntos_nuevos"], "ignorados": len(errors)})
+    return stats
 
 
 def import_excel(uploaded_file: BinaryIO, repository: Repository) -> dict:
-    imported = ignored = points_count = 0
-    errors: list[dict] = []
-    sheets = pd.read_excel(uploaded_file, sheet_name=None)
-    for sheet_name, frame in sheets.items():
-        columns = _find_columns(frame)
-        missing = [name for name in ("dispositivo", "campana", "medicion", "v", "i") if name not in columns]
-        if missing:
-            errors.append({"Archivo": sheet_name, "Fila": "-", "Problema": "faltan columnas: " + ", ".join(missing)})
-            ignored += 1
-            continue
-        frame = frame.copy()
-        frame["__fila"] = frame.index + 2
-        group_columns = [columns[name] for name in ("dispositivo", "campana", "medicion")]
-        for _, group in frame.groupby(group_columns, dropna=False, sort=False):
-            try:
-                row = group.iloc[0]
-                device = str(row[columns["dispositivo"]]).strip()
-                campaign = str(row[columns["campana"]]).strip()
-                measurement = str(row[columns["medicion"]]).strip()
-                if not device or not campaign or not measurement:
-                    raise ValueError("identificador vacio")
-                points = group[[columns["v"], columns["i"]]].rename(columns={columns["v"]: "v", columns["i"]: "i"})
-                points["v"] = pd.to_numeric(points["v"], errors="raise")
-                points["i"] = pd.to_numeric(points["i"], errors="raise")
-                device_id = repository.add_device(device)
-                campaign_id = repository.add_campaign(device_id, campaign)
-                measurement_id, created = repository.add_measurement({
-                    "dispositivo_id": device_id, "campana_id": campaign_id, "archivo": measurement,
-                    "fecha": str(row[columns["fecha"]]) if "fecha" in columns else str(date.today()),
-                    "descripcion": str(row[columns["descripcion"]]) if "descripcion" in columns else "",
-                    "clase": str(row[columns["clase"]]) if "clase" in columns else "normal",
-                    "estado": str(row[columns["estado"]]) if "estado" in columns else "nada",
-                })
-                if created:
-                    repository.add_points(measurement_id, points)
-                    points_count += len(points)
-                    imported += 1
-                else:
-                    ignored += 1
-            except (TypeError, ValueError) as error:
-                errors.append({"Archivo": sheet_name, "Fila": int(group.iloc[0]["__fila"]), "Problema": str(error)})
-                ignored += 1
-    repository.connection.commit()
-    return {"dispositivos": len(repository.devices()), "campanas": len(repository.campaigns()), "mediciones": imported, "puntos": points_count, "ignorados": ignored, "errores": errors}
+    return _import_frames(list(pd.read_excel(uploaded_file, sheet_name=None, header=None).items()), repository)
+
+
+def import_measurement(uploaded_file: BinaryIO, repository: Repository) -> dict:
+    raw = uploaded_file.read()
+    name = getattr(uploaded_file, "name", "medicion.ri")
+    frame = pd.read_csv(io.BytesIO(raw), sep=r"[,;\t ]+", engine="python", header=None, comment="#")
+    metadata = extract_metadata(frame, "", name)
+    points = _points_from_frame(frame)
+    if points.empty:
+        raise ValueError("no se encontraron columnas V/I ni puntos numericos")
+    return _import_frames([(name, frame)], repository)
+
+
+def detect_input_type(uploaded_file: BinaryIO) -> str:
+    name = getattr(uploaded_file, "name", "").lower()
+    if name.endswith((".xlsx", ".xlsm", ".xls")):
+        return "excel"
+    if name.endswith(".ri"):
+        return "medicion"
+    return "desconocido"
