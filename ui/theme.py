@@ -24,12 +24,26 @@ def apply_theme() -> None:
         h1 { letter-spacing: -.02em; color: var(--ink); font-weight: 750; }
         h2, h3 { color: var(--ink); font-weight: 700; }
         [data-testid="stCaptionContainer"] { color: var(--muted); }
+        [data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] p { color: var(--ink); }
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"], [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color: #edf4f5; }
         [data-testid="stMetric"] { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: .8rem .9rem; box-shadow: 0 2px 10px rgba(23, 33, 43, .04); }
         [data-testid="stMetricLabel"] { color: var(--muted); }
         [data-testid="stMetricValue"] { color: var(--ink); }
         [data-baseweb="tab-list"] { gap: .35rem; border-bottom: 1px solid var(--line); }
         [data-baseweb="tab"] { color: var(--muted); padding: .7rem 1rem; }
         [aria-selected="true"][data-baseweb="tab"] { color: var(--iv); border-bottom-color: var(--iv); }
+        [data-testid="stSelectbox"] label, [data-testid="stMultiSelect"] label, [data-testid="stNumberInput"] label { color: var(--ink); font-weight: 650; }
+        [data-baseweb="select"] > div { min-height: 2.65rem; border-radius: 8px; border-color: var(--line); background: var(--panel); }
+        [data-baseweb="tag"] { background: #dceff1; color: #075866; border-radius: 999px; }
+        [data-testid="stCheckbox"] label { color: var(--ink); }
+        [data-testid="stTextInput"] label, [data-testid="stTextArea"] label, [data-testid="stFileUploader"] label { color: var(--ink); font-weight: 650; }
+        [data-baseweb="select"] input, [data-baseweb="select"] span { color: var(--ink); }
+        [data-baseweb="popover"] [role="option"], [data-baseweb="popover"] [role="listbox"] { background: var(--panel); color: var(--ink); }
+        [data-baseweb="popover"] [role="option"]:hover { background: #e8f2f3; color: #075866; }
+        [data-testid="stButton"] button { border-radius: 8px; font-weight: 650; color: var(--ink); background: var(--panel); border: 1px solid var(--line); }
+        [data-testid="stButton"] button:hover { color: #075866; border-color: var(--iv); background: #e8f2f3; }
+        [data-testid="stButton"] button[kind="primary"] { color: #ffffff; background: var(--iv); border-color: var(--iv); }
+        [data-testid="stButton"] button[kind="primary"]:hover { color: #ffffff; background: #075866; }
         [data-testid="stDataFrame"] { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
         .section-banner { border-left: 5px solid var(--iv); background: var(--panel); border-radius: 0 10px 10px 0; padding: 1rem 1.2rem; margin: .2rem 0 1.2rem; box-shadow: 0 2px 10px rgba(23, 33, 43, .04); }
         .section-banner.track { border-left-color: var(--track); }

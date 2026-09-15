@@ -148,12 +148,12 @@ class Repository:
             (campaign_id, vt, current),
         )
 
-    def link_campaigns(self, previous_id: int, next_id: int, order: int = 1, reason: str = "") -> None:
+    def link_campaigns(self, previous_id: int, next_id: int, order: int | None = 1, reason: str = "") -> None:
         self.connection.execute(
             """INSERT INTO relaciones_campana(anterior_id, siguiente_id, orden, motivo)
                VALUES (?, ?, ?, ?)
                ON CONFLICT(anterior_id, siguiente_id) DO UPDATE SET orden=excluded.orden, motivo=excluded.motivo""",
-            (previous_id, next_id, order, reason.strip()),
+            (previous_id, next_id, 0 if order is None else order, reason.strip()),
         )
 
     def campaign_links(self) -> pd.DataFrame:

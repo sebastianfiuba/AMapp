@@ -58,7 +58,8 @@ def _render_campaign(repository, campaign, campaign_id: int):
 
 
 def _render_evolution(repository, campaigns, labels):
-    st.subheader("Evolución de puntos ZTC")
+    st.subheader("Evolución de puntos ZTC sobre curvas I-V")
+    st.caption("Cada color representa una campaña; la estrella marca su punto ZTC.")
     selected = st.multiselect("Campañas a analizar", labels, default=labels[:2], key="ztc_evolution_campaigns")
     selected_ids = [int(campaigns.iloc[labels.index(label)].id) for label in selected]
     if not selected_ids:
@@ -71,7 +72,7 @@ def _render_evolution(repository, campaigns, labels):
         try:
             result, _ = campaign_analysis(repository, campaign_id)
             rows.append({"campana_id": campaign_id, "dispositivo": campaign.dispositivo, "campaña": campaign.numero,
-                         "VT ZTC [V]": result["vt_ztc"], "I ZTC [A]": result["i_ztc"], "mediciones": result["cantidad_mediciones"]})
+                         "VT ZTC [V]": result["vt_ztc"], "I ZTC [µA]": result["i_ztc"] * 1_000_000, "mediciones": result["cantidad_mediciones"]})
         except ValueError as error:
             st.warning(f"{campaign.dispositivo} | {campaign.numero}: {error}")
     if not rows:
@@ -79,10 +80,19 @@ def _render_evolution(repository, campaigns, labels):
     frame = pd.DataFrame(rows)
     st.dataframe(frame.drop(columns=["campana_id"]), width="stretch", hide_index=True)
     figure = go.Figure()
-    figure.add_trace(go.Scatter(x=frame["campaña"], y=frame["VT ZTC [V]"], mode="lines+markers", name="VT ZTC"))
-    figure.update_layout(template="plotly_white", xaxis_title="Campaña / etapa", yaxis_title="VT ZTC [V]")
+    colors = ["#0c7285", "#bd7b19", "#c34d46", "#4f6d7a", "#6b5b95", "#4d8b5f"]
+    for index, row in frame.iterrows():
+        measurements = repository.measurements(int(row["campana_id"]))
+        for measurement in measurements.itertuples():
+            points = repository.points(int(measurement.id))
+            figure.add_trace(go.Scatter(x=points.v, y=points.i, mode="lines", line={"color": colors[index % len(colors)]},
+                                         legendgroup=str(row["campana_id"]), name=f"{row['dispositivo']} | {row['campaña']}"))
+        figure.add_trace(go.Scatter(x=[row["VT ZTC [V]"]], y=[row["I ZTC [µA]"] / 1_000_000], mode="markers",
+                                     marker={"size": 14, "symbol": "star", "color": colors[index % len(colors)]},
+                                     legendgroup=str(row["campana_id"]), name=f"ZTC | {row['campaña']}"))
+    figure.update_layout(template="plotly_white", xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified")
     st.plotly_chart(figure, width="stretch")
-    st.caption("Las campañas enlazadas en Secuencia se pueden ordenar por etapa para leer este gráfico como antes/después.")
+    st.caption("Las estrellas son los puntos ZTC de cada campaña. La tabla expresa la corriente en µA.")
 
 
 def _render_links(repository, campaigns, labels):
@@ -91,18 +101,21 @@ def _render_links(repository, campaigns, labels):
     options = {label: int(campaigns.iloc[index].id) for index, label in enumerate(labels)}
     previous = st.selectbox("Campaña anterior", labels, key="link_previous")
     following = st.selectbox("Campaña siguiente", labels, key="link_following")
-    order = st.number_input("Etapa", min_value=1, value=1, step=1)
+    indeterminate = st.checkbox("Orden todavía indeterminado", help="Usalo cuando sabés que hay relación, pero aún no la etapa exacta.")
+    order = st.number_input("Etapa", min_value=1, value=1, step=1, disabled=indeterminate)
     reason = st.text_input("Motivo / tratamiento", placeholder="Ej.: después de Curie, antes de horno")
     if st.button("Guardar secuencia", type="primary"):
         if previous == following:
             st.error("La campaña anterior y siguiente deben ser distintas.")
         else:
-            repository.link_campaigns(options[previous], options[following], int(order), reason)
+            repository.link_campaigns(options[previous], options[following], None if indeterminate else int(order), reason)
             repository.connection.commit()
             st.success("Secuencia guardada.")
     links = repository.campaign_links()
     if not links.empty:
-        st.dataframe(links[["dispositivo", "anterior", "siguiente", "orden", "motivo"]], width="stretch", hide_index=True)
+        display_links = links[["dispositivo", "anterior", "siguiente", "orden", "motivo"]].copy()
+        display_links["orden"] = display_links["orden"].replace(0, "Indeterminada").fillna("Indeterminada")
+        st.dataframe(display_links, width="stretch", hide_index=True)
     _render_recommendations(repository, campaigns)
 
 
