@@ -1,10 +1,11 @@
 import streamlit as st
 
 from ui.charts import chart_downloads, iv_chart
+from ui.theme import banner
 
 
 def render(repository):
-    st.title("Análisis I-V")
+    banner("Caracterización eléctrica", "Análisis I-V", "Compará curvas de tensión-corriente por dispositivo y campaña.")
     campaigns = repository.campaigns()
     if campaigns.empty:
         st.info("Todavía no hay campañas con mediciones I-V.")

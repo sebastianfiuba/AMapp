@@ -2,10 +2,11 @@ import pandas as pd
 import streamlit as st
 
 from ui.charts import chart_downloads, track_chart
+from ui.theme import banner
 
 
 def render(repository):
-    st.title("Análisis Track Vt")
+    banner("Seguimiento temporal", "Análisis Track Vt", "Observá la deriva de Vt durante irradiación, temperatura o tratamiento.", "track")
     devices = repository.devices()
     if devices.empty:
         st.info("Todavía no hay dispositivos con Track Vt.")

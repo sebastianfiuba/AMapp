@@ -11,9 +11,11 @@ import ui.measurements as measurements
 import ui.track_vt as track_vt
 import ui.workbench as workbench
 import ui.ztc as ztc
+from ui.theme import apply_theme
 
 
 st.set_page_config(page_title=APP_TITLE, page_icon="📊", layout="wide")
+apply_theme()
 initialize_database()
 
 
@@ -23,7 +25,9 @@ def get_repository():
 
 
 repository = get_repository()
-page = st.sidebar.radio("Navegación", ["📊 Dashboard", "⚡ I-V", "⏱ Track Vt", "🔬 Mediciones", "🧰 Workbench", "🧮 Análisis ZTC", "📥 Importar / Exportar"])
+st.sidebar.markdown("## AMapp")
+st.sidebar.caption("Laboratorio de curvas y campañas")
+page = st.sidebar.radio("Navegación", ["📊 Dashboard", "⚡ I-V", "⏱ Track Vt", "📈 Gráficos", "🔬 Mediciones", "🧰 Workbench", "🧮 Análisis ZTC", "📥 Importar / Exportar"])
 
 if page == "📊 Dashboard":
     dashboard.render(repository)
@@ -33,7 +37,7 @@ elif page == "⏱ Track Vt":
     track_vt.render(repository)
 elif page == "🔬 Mediciones":
     measurements.render(repository)
-elif page == "📈 Graficos":
+elif page == "📈 Gráficos":
     graphs.render(repository)
 elif page == "🧮 Análisis ZTC":
     ztc.render(repository)

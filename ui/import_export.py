@@ -2,10 +2,11 @@ import streamlit as st
 
 from services.excel_export import export_excel, export_integrity
 from services.excel_import import detect_input_type, import_excel, import_measurement
+from ui.theme import banner
 
 
 def render(repository):
-    st.title("Importar / Exportar")
+    banner("Datos y trazabilidad", "Importar / Exportar", "Cargá mediciones, revisá formatos no clasificados y descargá una copia completa.")
     uploaded = st.file_uploader("Selecciona un Excel o una medicion (.xlsx, .xls, .xlsm, .ri)", type=["xlsx", "xls", "xlsm", "ri"])
     if uploaded and st.button("Importar datos", type="primary"):
         with st.spinner("Importando..."):

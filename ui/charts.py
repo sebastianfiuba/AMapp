@@ -8,7 +8,7 @@ def iv_chart(measurements, points_by_measurement, ztc=None):
         figure.add_trace(go.Scatter(x=points.v, y=points.i, mode="lines+markers", name=str(row.archivo)))
     if ztc:
         figure.add_trace(go.Scatter(x=[ztc[0]], y=[ztc[1]], mode="markers", name="ZTC", marker={"size": 13, "symbol": "star", "color": "crimson"}))
-    figure.update_layout(xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified", template="plotly_white", legend_title="Medicion")
+    figure.update_layout(xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified", template="plotly_white", legend_title="Medición", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={"family": "Source Sans 3, sans-serif", "color": "#17212b"})
     figure.update_xaxes(showgrid=True, zeroline=True)
     figure.update_yaxes(showgrid=True, zeroline=True)
     return figure
@@ -19,7 +19,7 @@ def track_chart(tracks, points_by_track):
     for row in tracks.itertuples():
         points = points_by_track[int(row.id)]
         figure.add_trace(go.Scatter(x=points.t, y=points.vt, mode="lines", name=f"{row.dispositivo} | {row.canal} | {row.archivo}"))
-    figure.update_layout(xaxis_title="Tiempo [s]", yaxis_title="Vt [V]", hovermode="x unified", template="plotly_white", legend_title="Track Vt")
+    figure.update_layout(xaxis_title="Tiempo [s]", yaxis_title="Vt [V]", hovermode="x unified", template="plotly_white", legend_title="Track Vt", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={"family": "Source Sans 3, sans-serif", "color": "#17212b"})
     figure.update_xaxes(showgrid=True, zeroline=True)
     figure.update_yaxes(showgrid=True, zeroline=True)
     return figure

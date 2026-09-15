@@ -1,10 +1,11 @@
 import streamlit as st
 
 from ui.charts import iv_chart
+from ui.theme import banner
 
 
 def render(repository):
-    st.title("Graficos")
+    banner("Vista rápida", "Gráficos", "Inspeccioná las curvas I-V de una campaña sin entrar al análisis ZTC.")
     campaigns = repository.campaigns()
     if campaigns.empty:
         st.info("Todavia no hay campanas cargadas.")

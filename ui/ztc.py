@@ -4,12 +4,12 @@ import pandas as pd
 
 from services.measurements import campaign_analysis, individual_result
 from ui.charts import iv_chart
+from ui.theme import banner
 from utils.helpers import format_current
 
 
 def render(repository):
-    st.title("Análisis ZTC")
-    st.caption("ZTC se calcula solamente sobre curvas I-V. Track Vt se analiza en su sección independiente.")
+    banner("Punto de operación", "Análisis ZTC", "Compará el desplazamiento de VT e I entre campañas. ZTC usa únicamente curvas I-V.", "ztc")
     campaigns = repository.campaigns()
     if campaigns.empty:
         st.info("Todavia no hay campanas cargadas.")

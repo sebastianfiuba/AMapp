@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.charts import chart_downloads, iv_chart, track_chart
+from ui.theme import banner
 
 
 def _label(row):
@@ -149,8 +150,7 @@ def _render_matching(repository):
 
 
 def render(repository):
-    st.title("Workbench")
-    st.caption("Comparación, exploración por dispositivo y control de correspondencias Excel-base.")
+    banner("Mesa de trabajo", "Workbench", "Armá comparaciones, revisá un dispositivo y conectá campañas con la base.")
     comparison, device, matching = st.tabs(["Comparador", "Dispositivo", "Matching"])
     with comparison:
         _render_comparison(repository)

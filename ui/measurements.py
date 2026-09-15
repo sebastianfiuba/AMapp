@@ -1,8 +1,10 @@
 import streamlit as st
 
+from ui.theme import banner
+
 
 def render(repository):
-    st.title("Mediciones")
+    banner("Explorador", "Mediciones", "Navegá por dispositivo, campaña y archivo para inspeccionar cada curva I-V.")
     devices = repository.devices()
     if devices.empty:
         st.info("Todavia no hay dispositivos cargados.")
