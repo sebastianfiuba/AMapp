@@ -1,11 +1,24 @@
 import plotly.graph_objects as go
 
 
+def campaign_context(value: object) -> str:
+    text = str(value or "").casefold()
+    for marker, label in (("posthorno", "posthorno"), ("postcañon", "postcañón"), ("postcanon", "postcañón"),
+                          ("curie", "Curie"), ("nada", "nada"), ("temperatura", "temperatura"), ("temp", "temperatura")):
+        if marker in text:
+            return label
+    return "sin clasificar"
+
+
 def iv_chart(measurements, points_by_measurement, ztc=None):
     figure = go.Figure()
     for row in measurements.itertuples():
         points = points_by_measurement[int(row.id)]
-        figure.add_trace(go.Scatter(x=points.v, y=points.i, mode="lines+markers", name=str(row.archivo)))
+        campaign = getattr(row, "campana", "")
+        device = getattr(row, "dispositivo", "")
+        description = getattr(row, "descripcion", "")
+        label = " | ".join(str(value) for value in (device, campaign, campaign_context(campaign), row.archivo, description) if str(value).strip())
+        figure.add_trace(go.Scatter(x=points.v, y=points.i, mode="lines+markers", name=label, hovertemplate=f"{label}<br>V=%{{x}} V<br>I=%{{y}} A<extra></extra>"))
     if ztc:
         figure.add_trace(go.Scatter(x=[ztc[0]], y=[ztc[1]], mode="markers", name="ZTC", marker={"size": 13, "symbol": "star", "color": "crimson"}))
     figure.update_layout(xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified", template="plotly_white", legend_title="Medición", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={"family": "Source Sans 3, sans-serif", "color": "#17212b"})

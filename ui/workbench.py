@@ -6,7 +6,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from ui.charts import chart_downloads, iv_chart, track_chart
+from services.measurements import extract_temperature, temperature_measurements
+from ui.charts import campaign_context, chart_downloads, iv_chart, track_chart
 from ui.theme import banner
 from ui.ztc import render_panel as render_ztc_panel
 
@@ -29,7 +30,7 @@ def _measurement_details(repository, measurement_id: int) -> None:
     st.dataframe(points, hide_index=True, width="stretch")
 
 
-def _render_comparison(repository):
+def _render_measurement_comparison(repository):
     st.subheader("Comparador")
     devices = repository.devices()
     campaigns = repository.campaigns()
@@ -125,6 +126,66 @@ def _render_comparison(repository):
         repository.save_workbench_view(save_name, {"devices": selected_device_ids, "campaigns": campaign_ids, "filter_text": filter_text, "states": filter_states, "date": filter_date})
         repository.connection.commit()
         st.success("Vista guardada.")
+
+
+def _render_thermal_device_comparison(repository):
+    st.subheader("Comparación automática de barridos térmicos")
+    campaigns = repository.campaigns()
+    devices = repository.devices()
+    if campaigns.empty or devices.empty:
+        st.info("Importa campañas de más de un dispositivo para comparar.")
+        return
+    device_options = {row.nombre: int(row.id) for row in devices.itertuples()}
+    reference_name = st.selectbox("Dispositivo de referencia", list(device_options), key="thermal_reference_device")
+    reference_id = device_options[reference_name]
+    reference_campaigns = campaigns[campaigns.dispositivo_id == reference_id]
+    reference_options = {f"{row.numero} (id {row.id})": int(row.id) for row in reference_campaigns.itertuples()}
+    selected_reference = st.selectbox("Campaña térmica de referencia", list(reference_options), key="thermal_reference_campaign")
+    reference_id_campaign = reference_options[selected_reference]
+    reference_measurements = temperature_measurements(repository.iv_measurements(reference_id_campaign))
+    if reference_measurements.empty:
+        st.info("La campaña de referencia no tiene barridos térmicos identificables.")
+        return
+    other_ids = [value for name, value in device_options.items() if value != reference_id]
+    selected_other = st.multiselect("Comparar con dispositivos", [name for name in device_options if name != reference_name], default=[name for name in device_options if name != reference_name], key="thermal_other_devices")
+    selected_other_ids = [device_options[name] for name in selected_other]
+    candidate_campaigns = campaigns[campaigns.dispositivo_id.isin(selected_other_ids)]
+    candidate_rows = []
+    for campaign in candidate_campaigns.itertuples():
+        thermal = temperature_measurements(repository.iv_measurements(int(campaign.id)))
+        if not thermal.empty:
+            candidate_rows.append({"id": int(campaign.id), "dispositivo": campaign.dispositivo, "campaña": campaign.numero, "mediciones": len(thermal)})
+    if not candidate_rows:
+        st.info("No hay barridos térmicos en los otros dispositivos seleccionados.")
+        return
+    candidates = pd.DataFrame(candidate_rows)
+    selected_candidates = st.multiselect("Campañas térmicas a comparar", [f"{row.dispositivo} | {row.campaña} (id {row.id})" for row in candidates.itertuples()], default=[f"{row.dispositivo} | {row.campaña} (id {row.id})" for row in candidates.itertuples()], key="thermal_candidate_campaigns")
+    selected_campaign_ids = [int(label.rsplit("id ", 1)[1].rstrip(")")) for label in selected_candidates]
+    selected_campaign_ids.append(reference_id_campaign)
+    figure = go.Figure()
+    rows = []
+    for campaign_id in selected_campaign_ids:
+        campaign = campaigns[campaigns.id == campaign_id].iloc[0]
+        thermal = temperature_measurements(repository.iv_measurements(campaign_id))
+        for measurement in thermal.itertuples():
+            points = repository.points(int(measurement.id))
+            temperature = extract_temperature(measurement)
+            context = campaign_context(campaign.numero)
+            label = f"{campaign.dispositivo} | {campaign.numero} | {context} | {measurement.archivo} | {temperature:g} °C" if temperature is not None else f"{campaign.dispositivo} | {campaign.numero} | {context} | {measurement.archivo}"
+            figure.add_trace(go.Scatter(x=points.v, y=points.i, mode="lines", name=label))
+        rows.append({"dispositivo": campaign.dispositivo, "campaña": campaign.numero, "barridos térmicos": len(thermal)})
+    figure.update_layout(template="plotly_white", xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified", legend_title="Dispositivo | Campaña | Medición | Temperatura")
+    st.plotly_chart(figure, width="stretch")
+    st.download_button("Exportar comparación térmica (HTML)", figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "comparacion_barridos_termicos.html", "text/html", key="thermal_comparison_export")
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+
+def _render_comparison(repository):
+    search_tab, thermal_tab = st.tabs(["Buscador I-V y Track Vt", "Barridos térmicos entre dispositivos"])
+    with search_tab:
+        _render_measurement_comparison(repository)
+    with thermal_tab:
+        _render_thermal_device_comparison(repository)
 
 
 def _render_device(repository):
