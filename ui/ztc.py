@@ -2,7 +2,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
 
-from services.measurements import campaign_analysis, individual_result, temperature_measurements
+from services.measurements import campaign_analysis, extract_temperature, individual_result, temperature_measurements
 from ui.charts import iv_chart
 from ui.theme import banner
 from utils.helpers import format_current
@@ -54,9 +54,10 @@ def _render_analysis(repository):
 def _render_campaign(repository, campaign, campaign_id: int):
     measurements = temperature_measurements(repository.iv_measurements(campaign_id))
     st.caption(f"{len(measurements)} medicion(es) disponibles")
+    method = st.selectbox("Método ZTC", ["dI/dT", "error relativo"], key=f"ztc_method_{campaign_id}", help="dI/dT busca pendiente térmica cero. Error relativo minimiza la diferencia porcentual entre corrientes a un mismo VT.")
     if st.button("Calcular / actualizar ZTC", type="primary"):
         try:
-            result, _ = campaign_analysis(repository, campaign_id, measurements)
+            result, _ = campaign_analysis(repository, campaign_id, measurements, method)
             st.session_state[f"ztc_{campaign_id}"] = result
             st.success("Analisis guardado.")
         except ValueError as error:
@@ -69,8 +70,18 @@ def _render_campaign(repository, campaign, campaign_id: int):
     if result:
         st.metric("VT ZTC", f"{result['vt_ztc']:.6g} V")
         st.metric("I ZTC", format_current(result["i_ztc"]))
+        st.caption(f"Método: {result.get('metodo', method)} | Error relativo en el cruce: {result.get('error_relativo', 0):.3%}")
         points = {int(row.id): repository.points(int(row.id)) for row in measurements.itertuples()}
-        st.plotly_chart(iv_chart(measurements, points, (result["vt_ztc"], result["i_ztc"])), width="stretch")
+        figure = go.Figure()
+        colors = ["#0c7285", "#bd7b19", "#c34d46", "#4f6d7a", "#6b5b95", "#4d8b5f"]
+        for index, measurement in enumerate(measurements.itertuples()):
+            curve = points[int(measurement.id)]
+            temperature = extract_temperature(measurement)
+            figure.add_trace(go.Scatter(x=curve.v, y=curve.i, mode="lines+markers", line={"color": colors[index % len(colors)]},
+                                         name=f"{measurement.archivo} | {temperature:g} °C" if temperature is not None else str(measurement.archivo)))
+        figure.add_trace(go.Scatter(x=[result["vt_ztc"]], y=[result["i_ztc"]], mode="markers", marker={"size": 14, "symbol": "star", "color": "crimson"}, name="ZTC"))
+        figure.update_layout(template="plotly_white", xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified")
+        st.plotly_chart(figure, width="stretch")
         rows = []
         for measurement in measurements.itertuples():
             try:
@@ -95,7 +106,7 @@ def _render_evolution(repository, campaigns, labels):
         campaign = campaigns[campaigns.id == campaign_id].iloc[0]
         measurements = temperature_measurements(repository.iv_measurements(campaign_id))
         try:
-            result, _ = campaign_analysis(repository, campaign_id, measurements)
+            result, _ = campaign_analysis(repository, campaign_id, measurements, "dI/dT")
             rows.append({"campana_id": campaign_id, "dispositivo": campaign.dispositivo, "campaña": campaign.numero,
                          "VT ZTC [V]": result["vt_ztc"], "I ZTC [µA]": result["i_ztc"] * 1_000_000, "mediciones": result["cantidad_mediciones"]})
         except ValueError as error:
@@ -117,6 +128,10 @@ def _render_evolution(repository, campaigns, labels):
                                      legendgroup=str(row["campana_id"]), name=f"ZTC | {row['campaña']}"))
     figure.update_layout(template="plotly_white", xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified")
     st.plotly_chart(figure, width="stretch")
+    progression = go.Figure(go.Scatter(x=frame["campaña"], y=frame["I ZTC [µA]"], mode="lines+markers", text=frame["dispositivo"], name="I ZTC"))
+    progression.update_layout(template="plotly_white", xaxis_title="Campaña", yaxis_title="I ZTC [µA]", hovermode="x unified")
+    st.subheader("Progresión de I ZTC")
+    st.plotly_chart(progression, width="stretch")
     st.caption("Las estrellas son los puntos ZTC de cada campaña. La tabla expresa la corriente en µA.")
 
 

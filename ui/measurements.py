@@ -1,11 +1,11 @@
 import streamlit as st
 
 from ui.charts import chart_downloads, iv_chart
+from ui.track_vt import render_panel as render_track_panel
 from ui.theme import banner
 
 
-def render(repository):
-    banner("Explorador", "Mediciones", "Filtrá por dispositivo y campaña, y mantené una vista previa de las curvas seleccionadas.")
+def render_iv_panel(repository):
     devices = repository.devices()
     if devices.empty:
         st.info("Todavia no hay dispositivos cargados.")
@@ -40,3 +40,12 @@ def render(repository):
     row = measurements[measurements.id == measurement_options[selected]].iloc[0]
     st.dataframe(row[["dispositivo", "campana", "archivo", "fecha", "descripcion", "clase", "estado"]].to_frame("Valor"), width="stretch")
     st.dataframe(repository.points(int(row.id)), width="stretch", hide_index=True)
+
+
+def render(repository):
+    banner("Explorador", "Mediciones", "Consultá curvas I-V y mediciones Track Vt desde una sola sección.")
+    iv_tab, track_tab = st.tabs(["I-V", "Track Vt"])
+    with iv_tab:
+        render_iv_panel(repository)
+    with track_tab:
+        render_track_panel(repository)

@@ -5,8 +5,7 @@ from ui.charts import chart_downloads, track_chart
 from ui.theme import banner
 
 
-def render(repository):
-    banner("Seguimiento temporal", "Análisis Track Vt", "Observá la deriva de Vt durante irradiación, temperatura o tratamiento.", "track")
+def render_panel(repository):
     devices = repository.devices()
     if devices.empty:
         st.info("Todavía no hay dispositivos con Track Vt.")
@@ -51,3 +50,8 @@ def render(repository):
                   selected_points.vt.min() if not selected_points.empty else "-", selected_points.vt.max() if not selected_points.empty else "-"],
     }), hide_index=True, width="stretch")
     st.dataframe(selected_points, hide_index=True, width="stretch")
+
+
+def render(repository):
+    banner("Seguimiento temporal", "Análisis Track Vt", "Observá la deriva de Vt durante irradiación, temperatura o tratamiento.", "track")
+    render_panel(repository)

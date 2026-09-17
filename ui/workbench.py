@@ -273,6 +273,8 @@ def _render_absorbed_dose(repository):
     figure = iv_chart(preview, {measurement_id: points for measurement_id, points in selected_frames})
     for row in result.itertuples():
         figure.add_trace(go.Scatter(x=[row[1]], y=[target_current], mode="markers", marker={"size": 11, "symbol": "x"}, name=f"Corriente elegida | {row[0]}"))
+        figure.add_vline(x=row[1], line_dash="dot", line_color="rgba(190, 50, 50, 0.55)")
+        figure.add_hline(y=target_current, line_dash="dot", line_color="rgba(50, 90, 190, 0.55)")
     st.subheader("Previsualización de dosis absorbida")
     st.plotly_chart(figure, width="stretch")
     st.download_button("Exportar gráfico de dosis (HTML)", figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "dosis_absorbida.html", "text/html", key="dose_export")

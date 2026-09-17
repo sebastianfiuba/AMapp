@@ -31,7 +31,7 @@ def temperature_measurements(measurements: pd.DataFrame) -> pd.DataFrame:
     return measurements[measurements.apply(is_temperature_sweep, axis=1)].copy()
 
 
-def campaign_analysis(repository: Repository, campaign_id: int, measurements: pd.DataFrame | None = None) -> tuple[dict, pd.DataFrame]:
+def campaign_analysis(repository: Repository, campaign_id: int, measurements: pd.DataFrame | None = None, method: str = "dI/dT") -> tuple[dict, pd.DataFrame]:
     measurements = repository.iv_measurements(campaign_id) if measurements is None else measurements
     if measurements.empty:
         raise ValueError("la campana no tiene mediciones")
@@ -42,9 +42,10 @@ def campaign_analysis(repository: Repository, campaign_id: int, measurements: pd
     if len(set(temperatures)) < 2:
         raise ValueError("se necesitan al menos dos temperaturas distintas para calcular ZTC")
     curves = [repository.points(int(row.id)) for row in rows]
-    result, dispersion = analyze_curves(curves, temperatures)
+    result, dispersion = analyze_curves(curves, temperatures, method)
     repository.save_ztc(campaign_id, result.vt_ztc, result.i_ztc)
-    return {"vt_ztc": result.vt_ztc, "i_ztc": result.i_ztc, "cantidad_mediciones": result.cantidad_mediciones}, dispersion
+    return {"vt_ztc": result.vt_ztc, "i_ztc": result.i_ztc, "cantidad_mediciones": result.cantidad_mediciones,
+            "metodo": result.metodo, "error_relativo": result.error_relativo}, dispersion
 
 
 def individual_result(repository: Repository, measurement_id: int, vt_ztc: float, i_ztc: float) -> dict:

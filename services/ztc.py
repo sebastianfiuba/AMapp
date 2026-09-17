@@ -13,7 +13,7 @@ def _curve(points: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     return clean.v.to_numpy(), clean.i.to_numpy()
 
 
-def analyze_curves(curves: list[pd.DataFrame], temperatures: list[float] | None = None) -> tuple[ResultadoZTC, pd.DataFrame]:
+def analyze_curves(curves: list[pd.DataFrame], temperatures: list[float] | None = None, method: str = "dI/dT") -> tuple[ResultadoZTC, pd.DataFrame]:
     if not curves:
         raise ValueError("la campana no tiene mediciones")
     prepared = [_curve(curve) for curve in curves]
@@ -26,7 +26,7 @@ def analyze_curves(curves: list[pd.DataFrame], temperatures: list[float] | None 
         if temperatures is not None:
             raise ValueError("ZTC necesita al menos dos barridos a distintas temperaturas")
         index = int(np.argmin(np.abs(spline)))
-        return ResultadoZTC(float(values[index]), float(spline[index]), 1), pd.DataFrame({"v": values, "dispersion": np.zeros(len(values))})
+        return ResultadoZTC(float(values[index]), float(spline[index]), 1, method), pd.DataFrame({"v": values, "dispersion": np.zeros(len(values)), "relative_error": np.zeros(len(values))})
 
     lower = max(values.min() for values, _ in prepared)
     upper = min(values.max() for values, _ in prepared)
@@ -35,9 +35,14 @@ def analyze_curves(curves: list[pd.DataFrame], temperatures: list[float] | None 
     samples = np.linspace(lower, upper, max(200, len(curves) * 50))
     currents = np.vstack([np.interp(samples, values, current) for values, current in prepared])
     spread = currents.max(axis=0) - currents.min(axis=0)
+    mean_current = currents.mean(axis=0)
+    relative_error = spread / np.maximum(np.abs(mean_current), 1e-15)
+    slope = np.zeros(len(samples))
     if temperatures is None:
-        slope = np.zeros(len(samples))
         vt = float(samples[int(np.argmin(spread))])
+        method = "dispersion"
+    elif method == "error relativo":
+        vt = float(samples[int(np.argmin(relative_error))])
     else:
         temperature_values = np.asarray(temperatures, dtype=float)
         centered_temperature = temperature_values - temperature_values.mean()
@@ -50,4 +55,5 @@ def analyze_curves(curves: list[pd.DataFrame], temperatures: list[float] | None 
         else:
             vt = float(samples[int(np.argmin(np.abs(slope)))])
     iztc = float(np.mean([np.interp(vt, values, current) for values, current in prepared]))
-    return ResultadoZTC(vt, iztc, len(curves)), pd.DataFrame({"v": samples, "dispersion": spread, "d_i_d_t": slope})
+    error_at_vt = float(np.interp(vt, samples, relative_error))
+    return ResultadoZTC(vt, iztc, len(curves), method, error_at_vt), pd.DataFrame({"v": samples, "dispersion": spread, "d_i_d_t": slope, "relative_error": relative_error})
