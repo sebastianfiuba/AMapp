@@ -31,4 +31,19 @@ def render(repository):
     st.caption(f"{len(tracks)} tracks Vt")
     st.plotly_chart(figure, width="stretch")
     chart_downloads(figure, "comparacion_track_vt", "track_page")
-    st.dataframe(tracks[["id", "dispositivo", "campana", "archivo", "canal", "fecha"]], width="stretch", hide_index=True)
+    st.dataframe(tracks[["id", "dispositivo", "campana", "medicion", "canal", "fecha"]], width="stretch", hide_index=True)
+    selected_label = st.selectbox(
+        "Previsualizar medición Track Vt",
+        tracks.apply(lambda row: f"ID {row.id} | {row.dispositivo} | {row.medicion} | {row.canal}", axis=1).tolist(),
+        key="track_measurement_preview",
+    )
+    selected_id = int(selected_label.split("|")[0].replace("ID", "").strip())
+    selected_row = tracks[tracks.id == selected_id].iloc[0]
+    selected_points = repository.track_points(selected_id)
+    st.dataframe(pd.DataFrame({
+        "Característica": ["ID", "Dispositivo", "Medición", "Canal", "Puntos", "Tiempo inicial [s]", "Tiempo final [s]", "Vt mínimo [V]", "Vt máximo [V]"],
+        "Valor": [selected_id, selected_row.dispositivo, selected_row.medicion, selected_row.canal, len(selected_points),
+                  selected_points.t.min() if not selected_points.empty else "-", selected_points.t.max() if not selected_points.empty else "-",
+                  selected_points.vt.min() if not selected_points.empty else "-", selected_points.vt.max() if not selected_points.empty else "-"],
+    }), hide_index=True, width="stretch")
+    st.dataframe(selected_points, hide_index=True, width="stretch")

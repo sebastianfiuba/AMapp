@@ -29,6 +29,24 @@ def initialize_database(path: Path | str = DATABASE_PATH) -> None:
             connection.execute("ALTER TABLE dispositivos ADD COLUMN numero TEXT")
         track_columns = {row["name"] for row in connection.execute("PRAGMA table_info(tracks_vt)")}
         if "track_key" not in track_columns:
-            connection.execute("ALTER TABLE tracks_vt ADD COLUMN track_key TEXT")
-            connection.execute("UPDATE tracks_vt SET track_key = 'legacy-' || id WHERE track_key IS NULL")
+            connection.execute("PRAGMA foreign_keys = OFF")
+            connection.execute("""CREATE TABLE tracks_vt_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dispositivo_id INTEGER NOT NULL REFERENCES dispositivos(id) ON DELETE CASCADE,
+                campana_id INTEGER NOT NULL REFERENCES campanas(id) ON DELETE CASCADE,
+                archivo TEXT NOT NULL,
+                track_key TEXT NOT NULL,
+                canal TEXT NOT NULL,
+                fecha TEXT,
+                descripcion TEXT,
+                source_sheet TEXT,
+                UNIQUE(dispositivo_id, track_key)
+            )""")
+            connection.execute("""INSERT INTO tracks_vt_new
+                (id, dispositivo_id, campana_id, archivo, track_key, canal, fecha, descripcion, source_sheet)
+                SELECT id, dispositivo_id, campana_id, archivo, 'legacy-' || id, canal, fecha, descripcion, source_sheet
+                FROM tracks_vt""")
+            connection.execute("DROP TABLE tracks_vt")
+            connection.execute("ALTER TABLE tracks_vt_new RENAME TO tracks_vt")
+            connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_device_key ON tracks_vt(dispositivo_id, track_key)")

@@ -234,7 +234,7 @@ class Repository:
             JOIN campanas c ON c.id=m.campana_id ORDER BY p.id""")
 
     def tracks(self, device_id: int | None = None, campaign_ids: list[int] | None = None) -> pd.DataFrame:
-        sql = """SELECT t.*, d.nombre AS dispositivo, c.numero AS campana
+        sql = """SELECT t.*, t.archivo AS medicion, d.nombre AS dispositivo, c.numero AS campana
                   FROM tracks_vt t JOIN dispositivos d ON d.id=t.dispositivo_id
                   JOIN campanas c ON c.id=t.campana_id"""
         clauses = []

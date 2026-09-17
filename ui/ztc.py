@@ -29,8 +29,14 @@ def _render_analysis(repository):
     selected_devices = st.multiselect("Dispositivos", device_labels, default=device_labels[:1], key="ztc_devices")
     device_ids = [int(devices.loc[devices.nombre == name, "id"].iloc[0]) for name in selected_devices]
     campaigns = campaigns[campaigns.dispositivo_id.isin(device_ids)]
+    thermal_campaign_ids = {
+        int(campaign_id)
+        for campaign_id in campaigns.id
+        if not temperature_measurements(repository.iv_measurements(int(campaign_id))).empty
+    }
+    campaigns = campaigns[campaigns.id.isin(thermal_campaign_ids)]
     if campaigns.empty:
-        st.info("Selecciona al menos un dispositivo con campañas.")
+        st.info("No hay campañas con barridos de temperatura para los dispositivos seleccionados.")
         return
     labels = [f"{row.dispositivo} | {row.numero}" for row in campaigns.itertuples()]
     tab_single, tab_evolution, tab_links = st.tabs(["Una campaña", "Evolución", "Secuencia"])

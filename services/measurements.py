@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 
 from database.repository import Repository
@@ -12,7 +14,7 @@ TEMPERATURE_MARKERS = ("temperatura", "temperature", "thermal", "temp", "°c", "
 def is_temperature_sweep(row) -> bool:
     searchable = " ".join(str(getattr(row, field, "") or "") for field in ("archivo", "descripcion", "clase", "estado", "campana"))
     normalized = searchable.casefold()
-    return any(marker in normalized for marker in TEMPERATURE_MARKERS)
+    return any(marker in normalized for marker in TEMPERATURE_MARKERS) or bool(re.search(r"t\s*\d{1,3}(?!\d)", normalized))
 
 
 def temperature_measurements(measurements: pd.DataFrame) -> pd.DataFrame:

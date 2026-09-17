@@ -3,6 +3,7 @@ import re
 
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from ui.charts import chart_downloads, iv_chart, track_chart
@@ -11,7 +12,21 @@ from ui.ztc import render_panel as render_ztc_panel
 
 
 def _label(row):
-    return f"{row.dispositivo} | {row.campana} | {row.archivo}"
+    return f"ID {row.id} | {row.dispositivo} | {row.campana} | {row.archivo}"
+
+
+def _measurement_details(repository, measurement_id: int) -> None:
+    points = repository.points(measurement_id)
+    if points.empty:
+        st.info("La medición no tiene puntos.")
+        return
+    st.subheader("Características de la medición")
+    details = pd.DataFrame({
+        "Característica": ["Puntos", "Voltaje mínimo [V]", "Voltaje máximo [V]", "Corriente mínima [A]", "Corriente máxima [A]"],
+        "Valor": [len(points), points.v.min(), points.v.max(), points.i.min(), points.i.max()],
+    })
+    st.dataframe(details, hide_index=True, width="stretch")
+    st.dataframe(points, hide_index=True, width="stretch")
 
 
 def _render_comparison(repository):
@@ -76,6 +91,13 @@ def _render_comparison(repository):
         iv_figure = iv_chart(measurements, points)
         st.plotly_chart(iv_figure, width="stretch")
         st.download_button("Exportar gráfico I-V (HTML)", iv_figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "comparacion_iv.html", "text/html", key="comparison_iv_export")
+    if selected_ids:
+        detail_label = st.selectbox("Previsualizar medición", selected_labels, key="workbench_measurement_detail")
+        detail_id = measurement_labels[detail_label]
+        detail_row = measurements[measurements.id == detail_id]
+        if not detail_row.empty:
+            st.dataframe(detail_row[["id", "dispositivo", "campana", "archivo", "fecha", "descripcion", "clase", "estado"]], hide_index=True, width="stretch")
+            _measurement_details(repository, detail_id)
 
     track_frames = []
     for device_id in selected_device_ids:
@@ -94,7 +116,7 @@ def _render_comparison(repository):
         track_figure = track_chart(tracks, track_points)
         track_left, track_right = st.columns([1.35, 1], gap="large")
         with track_left:
-            st.data_editor(tracks[["id", "dispositivo", "campana", "archivo", "canal", "fecha"]], width="stretch", hide_index=True, disabled=True, key="workbench_track_table")
+                st.data_editor(tracks[["id", "dispositivo", "campana", "medicion", "canal", "fecha"]], width="stretch", hide_index=True, disabled=True, key="workbench_track_table")
         with track_right:
             st.plotly_chart(track_figure, width="stretch")
             st.download_button("Exportar Track Vt (HTML)", track_figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "comparacion_track_vt.html", "text/html", key="comparison_track_export")
@@ -121,8 +143,8 @@ def _render_device(repository):
     if not measurements.empty:
         st.dataframe(measurements[["campana", "archivo", "fecha", "descripcion", "clase", "estado"]], width="stretch", hide_index=True)
     if not tracks.empty:
-        st.dataframe(tracks[["campana", "archivo", "canal", "fecha", "source_sheet"]], width="stretch", hide_index=True)
-        selected_track = st.selectbox("Track Vt", tracks.apply(_label, axis=1).tolist())
+        st.dataframe(tracks[["id", "campana", "archivo", "canal", "fecha", "source_sheet"]], width="stretch", hide_index=True)
+        selected_track = st.selectbox("Medición Track Vt", tracks.apply(_label, axis=1).tolist())
         track = tracks.iloc[tracks.apply(_label, axis=1).tolist().index(selected_track)]
         selected_points = repository.track_points(int(track.id))
         st.metric("Duración [s]", f"{selected_points.t.max():.1f}" if not selected_points.empty else "-")
@@ -229,22 +251,31 @@ def _render_absorbed_dose(repository):
     options = {f"{row.campana} | {row.archivo}": int(row.id) for row in measurements.itertuples()}
     selected = st.multiselect("Mediciones", list(options), default=list(options)[:2], key="dose_measurements")
     target_current = st.number_input("Corriente objetivo [A]", value=0.00017, format="%.8g", key="dose_current")
-    if len(selected) < 2:
-        st.info("Selecciona al menos dos mediciones del mismo dispositivo.")
+    if not selected:
+        st.info("Selecciona mediciones del mismo dispositivo.")
         return
     rows = []
+    selected_frames = []
     for label in selected:
         measurement_id = options[label]
-        points = repository.points(measurement_id).sort_values("i")
+        points = repository.points(measurement_id).sort_values("i").drop_duplicates(subset=["i"])
+        selected_frames.append((measurement_id, points))
         if len(points) < 2 or target_current < points.i.min() or target_current > points.i.max():
             st.warning(f"{label}: la corriente objetivo queda fuera del rango medido.")
             continue
         voltage = float(np.interp(target_current, points.i.to_numpy(), points.v.to_numpy()))
         rows.append({"medicion": label, "VT a corriente objetivo [V]": voltage})
-    if len(rows) < 2:
+    if not rows:
         return
     result = pd.DataFrame(rows)
     result["delta VT respecto de la primera [V]"] = result.iloc[:, 1] - result.iloc[0, 1]
+    preview = measurements[measurements.id.isin([measurement_id for measurement_id, _ in selected_frames])]
+    figure = iv_chart(preview, {measurement_id: points for measurement_id, points in selected_frames})
+    for row in result.itertuples():
+        figure.add_trace(go.Scatter(x=[row[1]], y=[target_current], mode="markers", marker={"size": 11, "symbol": "x"}, name=f"Corriente elegida | {row[0]}"))
+    st.subheader("Previsualización de dosis absorbida")
+    st.plotly_chart(figure, width="stretch")
+    st.download_button("Exportar gráfico de dosis (HTML)", figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "dosis_absorbida.html", "text/html", key="dose_export")
     st.dataframe(result, width="stretch", hide_index=True)
 
 
