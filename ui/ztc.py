@@ -14,6 +14,14 @@ def render(repository):
     if campaigns.empty:
         st.info("Todavia no hay campanas cargadas.")
         return
+    devices = repository.devices()
+    device_labels = devices.nombre.tolist()
+    selected_devices = st.multiselect("Dispositivos", device_labels, default=device_labels[:1], key="ztc_devices")
+    device_ids = [int(devices.loc[devices.nombre == name, "id"].iloc[0]) for name in selected_devices]
+    campaigns = campaigns[campaigns.dispositivo_id.isin(device_ids)]
+    if campaigns.empty:
+        st.info("Selecciona al menos un dispositivo con campañas.")
+        return
     labels = [f"{row.dispositivo} | {row.numero}" for row in campaigns.itertuples()]
     tab_single, tab_evolution, tab_links = st.tabs(["Una campaña", "Evolución", "Secuencia"])
     with tab_single:
@@ -28,7 +36,7 @@ def render(repository):
 
 
 def _render_campaign(repository, campaign, campaign_id: int):
-    measurements = repository.measurements(campaign_id)
+    measurements = repository.iv_measurements(campaign_id)
     st.caption(f"{len(measurements)} medicion(es) disponibles")
     if st.button("Calcular / actualizar ZTC", type="primary"):
         try:
@@ -121,7 +129,7 @@ def _render_links(repository, campaigns, labels):
 
 def _render_recommendations(repository, campaigns):
     st.subheader("Comparaciones recomendadas")
-    measurements = repository.measurements()
+    measurements = repository.iv_measurements()
     stored = repository.ztc_results()
     recommendations = []
     for device_id, device_campaigns in campaigns.groupby("dispositivo_id"):

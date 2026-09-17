@@ -190,6 +190,17 @@ class Repository:
             params = (campaign_id,)
         return self._query(sql + " ORDER BY m.id", params)
 
+    def iv_measurements(self, campaign_id: int | None = None) -> pd.DataFrame:
+        sql = """SELECT m.*, d.nombre AS dispositivo, c.numero AS campana
+                  FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
+                  JOIN campanas c ON c.id=m.campana_id
+                  WHERE EXISTS (SELECT 1 FROM puntos p WHERE p.medicion_id=m.id)"""
+        params: tuple = ()
+        if campaign_id is not None:
+            sql += " AND m.campana_id = ?"
+            params = (campaign_id,)
+        return self._query(sql + " ORDER BY d.nombre, c.numero, m.archivo", params)
+
     def measurements_for_devices(self, device_ids: list[int]) -> pd.DataFrame:
         if not device_ids:
             return pd.DataFrame()
@@ -283,8 +294,42 @@ class Repository:
     def unclassified(self) -> pd.DataFrame:
         return self._query("SELECT id, archivo_origen, hoja, tipo, filas, columnas, datos_json, contenido_hash FROM datos_sin_clasificar ORDER BY hoja")
 
+    def save_measurement_group(self, name: str, measurement_ids: list[int], track_ids: list[int]) -> int:
+        if not name.strip() or (not measurement_ids and not track_ids):
+            raise ValueError("el grupo necesita nombre y al menos una medición o Track Vt")
+        device_ids = set()
+        for table, ids in (("mediciones", measurement_ids), ("tracks_vt", track_ids)):
+            if ids:
+                placeholders = ",".join("?" for _ in ids)
+                rows = self.connection.execute(f"SELECT DISTINCT dispositivo_id FROM {table} WHERE id IN ({placeholders})", ids).fetchall()
+                device_ids.update(int(row[0]) for row in rows)
+        if len(device_ids) > 1:
+            raise ValueError("un grupo solo puede asociar elementos del mismo dispositivo")
+        self.connection.execute("INSERT INTO grupos_medicion(nombre) VALUES (?) ON CONFLICT(nombre) DO UPDATE SET nombre=excluded.nombre", (name.strip(),))
+        group_id = int(self.connection.execute("SELECT id FROM grupos_medicion WHERE nombre = ?", (name.strip(),)).fetchone()[0])
+        self.connection.execute("DELETE FROM grupo_mediciones WHERE grupo_id = ?", (group_id,))
+        self.connection.execute("DELETE FROM grupo_tracks WHERE grupo_id = ?", (group_id,))
+        self.connection.executemany("INSERT INTO grupo_mediciones(grupo_id, medicion_id) VALUES (?, ?)", [(group_id, value) for value in measurement_ids])
+        self.connection.executemany("INSERT INTO grupo_tracks(grupo_id, track_id) VALUES (?, ?)", [(group_id, value) for value in track_ids])
+        return group_id
+
+    def measurement_groups(self) -> pd.DataFrame:
+        return self._query("SELECT id, nombre, creado_en FROM grupos_medicion ORDER BY nombre")
+
+    def group_measurements(self, group_id: int) -> pd.DataFrame:
+        return self._query("""SELECT m.id, m.archivo, d.nombre AS dispositivo, c.numero AS campana
+            FROM grupo_mediciones gm JOIN mediciones m ON m.id=gm.medicion_id
+            JOIN dispositivos d ON d.id=m.dispositivo_id JOIN campanas c ON c.id=m.campana_id
+            WHERE gm.grupo_id=? ORDER BY d.nombre, c.numero, m.archivo""", (group_id,))
+
+    def group_tracks(self, group_id: int) -> pd.DataFrame:
+        return self._query("""SELECT t.id, t.archivo, t.canal, d.nombre AS dispositivo, c.numero AS campana
+            FROM grupo_tracks gt JOIN tracks_vt t ON t.id=gt.track_id
+            JOIN dispositivos d ON d.id=t.dispositivo_id JOIN campanas c ON c.id=t.campana_id
+            WHERE gt.grupo_id=? ORDER BY d.nombre, c.numero, t.archivo, t.canal""", (group_id,))
+
     def counts(self) -> dict[str, int]:
-        tables = {"dispositivos": "devices", "campanas": "campaigns", "mediciones": "measurements", "puntos": "points", "tracks_vt": "tracks", "puntos_track_vt": "track_points", "datos_sin_clasificar": "unclassified", "analisis_ztc": "ztc"}
+        tables = {"dispositivos": "devices", "campanas": "campaigns", "mediciones": "measurements", "puntos": "points", "tracks_vt": "tracks", "puntos_track_vt": "track_points", "datos_sin_clasificar": "unclassified", "analisis_ztc": "ztc", "grupos_medicion": "groups"}
         return {label: int(self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]) for table, label in tables.items()}
 
     def ztc_results(self) -> pd.DataFrame:

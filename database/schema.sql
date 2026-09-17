@@ -92,3 +92,21 @@ CREATE TABLE IF NOT EXISTS relaciones_campana (
     UNIQUE(anterior_id, siguiente_id),
     CHECK(anterior_id <> siguiente_id)
 );
+
+CREATE TABLE IF NOT EXISTS grupos_medicion (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL UNIQUE,
+    creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS grupo_mediciones (
+    grupo_id INTEGER NOT NULL REFERENCES grupos_medicion(id) ON DELETE CASCADE,
+    medicion_id INTEGER NOT NULL REFERENCES mediciones(id) ON DELETE CASCADE,
+    PRIMARY KEY(grupo_id, medicion_id)
+);
+
+CREATE TABLE IF NOT EXISTS grupo_tracks (
+    grupo_id INTEGER NOT NULL REFERENCES grupos_medicion(id) ON DELETE CASCADE,
+    track_id INTEGER NOT NULL REFERENCES tracks_vt(id) ON DELETE CASCADE,
+    PRIMARY KEY(grupo_id, track_id)
+);

@@ -1,6 +1,7 @@
 import json
 import re
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -120,8 +121,8 @@ def _render_device(repository):
 
 
 def _render_matching(repository):
-    st.subheader("Matching Excel - base")
-    measurements = repository.measurements()
+    st.subheader("Matching y agrupación")
+    measurements = repository.iv_measurements()
     if measurements.empty:
         st.info("No hay mediciones I-V para asociar.")
         return
@@ -148,13 +149,84 @@ def _render_matching(repository):
     output = edited.to_csv(index=False).encode("utf-8")
     st.download_button("Exportar matching CSV", output, "matching_excel_base.csv", "text/csv")
 
+    st.divider()
+    st.subheader("Agrupar I-V con Track Vt")
+    st.caption("Las mediciones y tracks de un grupo deben pertenecer al mismo dispositivo.")
+    devices = repository.devices()
+    device_options = {row.nombre: int(row.id) for row in devices.itertuples()}
+    selected_device = st.selectbox("Dispositivo del grupo", list(device_options), key="group_device")
+    device_id = device_options[selected_device]
+    group_measurements = repository.iv_measurements()
+    group_measurements = group_measurements[group_measurements.dispositivo_id == device_id]
+    group_tracks = repository.tracks(device_id=device_id)
+    measurement_options = {f"{row.campana} | {row.archivo}": int(row.id) for row in group_measurements.itertuples()}
+    track_options = {f"{row.campana} | {row.canal} | {row.archivo}": int(row.id) for row in group_tracks.itertuples()}
+    selected_group_measurements = st.multiselect("Mediciones I-V", list(measurement_options), key="group_measurements")
+    selected_group_tracks = st.multiselect("Tracks Vt", list(track_options), key="group_tracks")
+    group_name = st.text_input("Nombre del grupo", key="group_name")
+    if st.button("Guardar grupo", type="primary", key="save_measurement_group"):
+        try:
+            repository.save_measurement_group(
+                group_name,
+                [measurement_options[label] for label in selected_group_measurements],
+                [track_options[label] for label in selected_group_tracks],
+            )
+            repository.connection.commit()
+            st.success("Grupo guardado.")
+        except ValueError as error:
+            st.error(str(error))
+    groups = repository.measurement_groups()
+    if not groups.empty:
+        selected_group = st.selectbox("Grupo guardado", groups.nombre.tolist(), key="saved_group")
+        group_id = int(groups.loc[groups.nombre == selected_group, "id"].iloc[0])
+        st.dataframe(repository.group_measurements(group_id), width="stretch", hide_index=True)
+        st.dataframe(repository.group_tracks(group_id), width="stretch", hide_index=True)
+
+
+def _render_absorbed_dose(repository):
+    st.subheader("Dosis absorbida")
+    st.caption("Prototipo: compara varias mediciones del mismo dispositivo a una corriente objetivo.")
+    devices = repository.devices()
+    if devices.empty:
+        st.info("Importa datos para analizar dosis absorbida.")
+        return
+    device_options = {row.nombre: int(row.id) for row in devices.itertuples()}
+    selected_device = st.selectbox("Dispositivo", list(device_options), key="dose_device")
+    measurements = repository.iv_measurements()
+    measurements = measurements[measurements.dispositivo_id == device_options[selected_device]]
+    if measurements.empty:
+        st.info("El dispositivo no tiene mediciones I-V.")
+        return
+    options = {f"{row.campana} | {row.archivo}": int(row.id) for row in measurements.itertuples()}
+    selected = st.multiselect("Mediciones", list(options), default=list(options)[:2], key="dose_measurements")
+    target_current = st.number_input("Corriente objetivo [A]", value=0.00017, format="%.8g", key="dose_current")
+    if len(selected) < 2:
+        st.info("Selecciona al menos dos mediciones del mismo dispositivo.")
+        return
+    rows = []
+    for label in selected:
+        measurement_id = options[label]
+        points = repository.points(measurement_id).sort_values("i")
+        if len(points) < 2 or target_current < points.i.min() or target_current > points.i.max():
+            st.warning(f"{label}: la corriente objetivo queda fuera del rango medido.")
+            continue
+        voltage = float(np.interp(target_current, points.i.to_numpy(), points.v.to_numpy()))
+        rows.append({"medicion": label, "VT a corriente objetivo [V]": voltage})
+    if len(rows) < 2:
+        return
+    result = pd.DataFrame(rows)
+    result["delta VT respecto de la primera [V]"] = result.iloc[:, 1] - result.iloc[0, 1]
+    st.dataframe(result, width="stretch", hide_index=True)
+
 
 def render(repository):
     banner("Mesa de trabajo", "Workbench", "Armá comparaciones, revisá un dispositivo y conectá campañas con la base.")
-    comparison, device, matching = st.tabs(["Comparador", "Dispositivo", "Matching"])
+    comparison, device, matching, dose = st.tabs(["Comparador", "Dispositivo", "Matching", "Dosis absorbida"])
     with comparison:
         _render_comparison(repository)
     with device:
         _render_device(repository)
     with matching:
         _render_matching(repository)
+    with dose:
+        _render_absorbed_dose(repository)

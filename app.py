@@ -4,7 +4,6 @@ from config import APP_TITLE
 from database.db import get_connection, initialize_database
 from database.repository import Repository
 import ui.dashboard as dashboard
-import ui.graphs as graphs
 import ui.import_export as import_export
 import ui.iv as iv
 import ui.measurements as measurements
@@ -27,7 +26,7 @@ def get_repository():
 repository = get_repository()
 st.sidebar.markdown("## AMapp")
 st.sidebar.caption("Laboratorio de curvas y campañas")
-page = st.sidebar.radio("Navegación", ["📊 Dashboard", "⚡ I-V", "⏱ Track Vt", "📈 Gráficos", "🔬 Mediciones", "🧰 Workbench", "🧮 Análisis ZTC", "📥 Importar / Exportar"])
+page = st.sidebar.radio("Navegación", ["📊 Dashboard", "⚡ I-V", "⏱ Track Vt", "🔬 Mediciones", "🧰 Workbench", "🧮 Análisis ZTC", "📥 Importar / Exportar"])
 
 if page == "📊 Dashboard":
     dashboard.render(repository)
@@ -37,8 +36,6 @@ elif page == "⏱ Track Vt":
     track_vt.render(repository)
 elif page == "🔬 Mediciones":
     measurements.render(repository)
-elif page == "📈 Gráficos":
-    graphs.render(repository)
 elif page == "🧮 Análisis ZTC":
     ztc.render(repository)
 elif page == "🧰 Workbench":
