@@ -9,7 +9,6 @@ import ui.iv as iv
 import ui.measurements as measurements
 import ui.track_vt as track_vt
 import ui.workbench as workbench
-import ui.ztc as ztc
 from ui.theme import apply_theme
 
 
@@ -26,7 +25,7 @@ def get_repository():
 repository = get_repository()
 st.sidebar.markdown("## AMapp")
 st.sidebar.caption("Laboratorio de curvas y campañas")
-page = st.sidebar.radio("Navegación", ["📊 Dashboard", "⚡ I-V", "⏱ Track Vt", "🔬 Mediciones", "🧰 Workbench", "🧮 Análisis ZTC", "📥 Importar / Exportar"])
+page = st.sidebar.radio("Navegación", ["📊 Dashboard", "⚡ I-V", "⏱ Track Vt", "🔬 Mediciones", "🧰 Workbench", "📥 Importar / Exportar"])
 
 if page == "📊 Dashboard":
     dashboard.render(repository)
@@ -36,8 +35,6 @@ elif page == "⏱ Track Vt":
     track_vt.render(repository)
 elif page == "🔬 Mediciones":
     measurements.render(repository)
-elif page == "🧮 Análisis ZTC":
-    ztc.render(repository)
 elif page == "🧰 Workbench":
     workbench.render(repository)
 else:

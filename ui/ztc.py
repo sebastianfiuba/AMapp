@@ -2,7 +2,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
 
-from services.measurements import campaign_analysis, individual_result
+from services.measurements import campaign_analysis, individual_result, temperature_measurements
 from ui.charts import iv_chart
 from ui.theme import banner
 from utils.helpers import format_current
@@ -10,6 +10,16 @@ from utils.helpers import format_current
 
 def render(repository):
     banner("Punto de operación", "Análisis ZTC", "Compará el desplazamiento de VT e I entre campañas. ZTC usa únicamente curvas I-V.", "ztc")
+    _render_analysis(repository)
+
+
+def render_panel(repository):
+    st.subheader("Análisis ZTC")
+    st.caption("Solo se pueden analizar barridos identificados como mediciones de temperatura.")
+    _render_analysis(repository)
+
+
+def _render_analysis(repository):
     campaigns = repository.campaigns()
     if campaigns.empty:
         st.info("Todavia no hay campanas cargadas.")
@@ -36,11 +46,11 @@ def render(repository):
 
 
 def _render_campaign(repository, campaign, campaign_id: int):
-    measurements = repository.iv_measurements(campaign_id)
+    measurements = temperature_measurements(repository.iv_measurements(campaign_id))
     st.caption(f"{len(measurements)} medicion(es) disponibles")
     if st.button("Calcular / actualizar ZTC", type="primary"):
         try:
-            result, _ = campaign_analysis(repository, campaign_id)
+            result, _ = campaign_analysis(repository, campaign_id, measurements)
             st.session_state[f"ztc_{campaign_id}"] = result
             st.success("Analisis guardado.")
         except ValueError as error:
@@ -77,8 +87,9 @@ def _render_evolution(repository, campaigns, labels):
     rows = []
     for campaign_id in selected_ids:
         campaign = campaigns[campaigns.id == campaign_id].iloc[0]
+        measurements = temperature_measurements(repository.iv_measurements(campaign_id))
         try:
-            result, _ = campaign_analysis(repository, campaign_id)
+            result, _ = campaign_analysis(repository, campaign_id, measurements)
             rows.append({"campana_id": campaign_id, "dispositivo": campaign.dispositivo, "campaña": campaign.numero,
                          "VT ZTC [V]": result["vt_ztc"], "I ZTC [µA]": result["i_ztc"] * 1_000_000, "mediciones": result["cantidad_mediciones"]})
         except ValueError as error:
@@ -90,7 +101,7 @@ def _render_evolution(repository, campaigns, labels):
     figure = go.Figure()
     colors = ["#0c7285", "#bd7b19", "#c34d46", "#4f6d7a", "#6b5b95", "#4d8b5f"]
     for index, row in frame.iterrows():
-        measurements = repository.measurements(int(row["campana_id"]))
+        measurements = temperature_measurements(repository.iv_measurements(int(row["campana_id"])))
         for measurement in measurements.itertuples():
             points = repository.points(int(measurement.id))
             figure.add_trace(go.Scatter(x=points.v, y=points.i, mode="lines", line={"color": colors[index % len(colors)]},
@@ -129,7 +140,7 @@ def _render_links(repository, campaigns, labels):
 
 def _render_recommendations(repository, campaigns):
     st.subheader("Comparaciones recomendadas")
-    measurements = repository.iv_measurements()
+    measurements = temperature_measurements(repository.iv_measurements())
     stored = repository.ztc_results()
     recommendations = []
     for device_id, device_campaigns in campaigns.groupby("dispositivo_id"):

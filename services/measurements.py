@@ -6,8 +6,23 @@ from database.repository import Repository
 from services.ztc import analyze_curves
 
 
-def campaign_analysis(repository: Repository, campaign_id: int) -> tuple[dict, pd.DataFrame]:
-    measurements = repository.measurements(campaign_id)
+TEMPERATURE_MARKERS = ("temperatura", "temperature", "thermal", "temp", "°c", "grados")
+
+
+def is_temperature_sweep(row) -> bool:
+    searchable = " ".join(str(getattr(row, field, "") or "") for field in ("archivo", "descripcion", "clase", "estado", "campana"))
+    normalized = searchable.casefold()
+    return any(marker in normalized for marker in TEMPERATURE_MARKERS)
+
+
+def temperature_measurements(measurements: pd.DataFrame) -> pd.DataFrame:
+    if measurements.empty:
+        return measurements.copy()
+    return measurements[measurements.apply(is_temperature_sweep, axis=1)].copy()
+
+
+def campaign_analysis(repository: Repository, campaign_id: int, measurements: pd.DataFrame | None = None) -> tuple[dict, pd.DataFrame]:
+    measurements = repository.iv_measurements(campaign_id) if measurements is None else measurements
     if measurements.empty:
         raise ValueError("la campana no tiene mediciones")
     curves = [repository.points(int(row.id)) for row in measurements.itertuples()]

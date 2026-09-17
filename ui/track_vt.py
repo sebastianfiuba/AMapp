@@ -19,9 +19,16 @@ def render(repository):
     if tracks.empty:
         st.info("Los dispositivos seleccionados no tienen Track Vt.")
         return
+    channels = sorted(tracks.canal.dropna().astype(str).unique())
+    selected_channels = st.multiselect("Canal del instrumento", channels, default=channels, key="track_channels")
+    if selected_channels:
+        tracks = tracks[tracks.canal.astype(str).isin(selected_channels)]
+    if tracks.empty:
+        st.info("No hay Tracks Vt para los canales seleccionados.")
+        return
     points = {int(row.id): repository.track_points(int(row.id)) for row in tracks.itertuples()}
     figure = track_chart(tracks, points)
     st.caption(f"{len(tracks)} tracks Vt")
     st.plotly_chart(figure, width="stretch")
     chart_downloads(figure, "comparacion_track_vt", "track_page")
-    st.dataframe(tracks[["dispositivo", "campana", "archivo", "canal", "fecha"]], width="stretch", hide_index=True)
+    st.dataframe(tracks[["id", "dispositivo", "campana", "archivo", "canal", "fecha"]], width="stretch", hide_index=True)

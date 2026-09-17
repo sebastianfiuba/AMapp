@@ -42,11 +42,12 @@ CREATE TABLE IF NOT EXISTS tracks_vt (
     dispositivo_id INTEGER NOT NULL REFERENCES dispositivos(id) ON DELETE CASCADE,
     campana_id INTEGER NOT NULL REFERENCES campanas(id) ON DELETE CASCADE,
     archivo TEXT NOT NULL,
+    track_key TEXT NOT NULL,
     canal TEXT NOT NULL,
     fecha TEXT,
     descripcion TEXT,
     source_sheet TEXT,
-    UNIQUE(dispositivo_id, archivo, canal)
+    UNIQUE(dispositivo_id, track_key)
 );
 
 CREATE TABLE IF NOT EXISTS puntos_track_vt (

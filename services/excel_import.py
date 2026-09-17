@@ -141,7 +141,8 @@ def _track_blocks(frame: pd.DataFrame) -> list[dict[str, object]]:
             if not device:
                 device = extract_device(frame.iloc[:, time_index].dropna().tolist()) or raw_device or "TRACK SIN IDENTIFICAR"
             date = _clean(frame.iloc[header_row - 2, time_index]) if header_row >= 2 else ""
-            blocks.append({"device": device, "channel": channel or f"Track {time_index + 1}", "date": date, "points": points})
+            blocks.append({"device": device, "channel": channel or f"Track {time_index + 1}", "date": date, "points": points,
+                           "block_index": len(blocks)})
     return blocks
 
 
@@ -205,10 +206,12 @@ def _import_track_frames(frames: list[tuple[str, pd.DataFrame]], repository: Rep
                     raise ValueError("no se pudo identificar dispositivo del Track Vt")
                 device_id = repository.add_device(device)
                 campaign_id = repository.add_campaign(device_id, sheet_name)
+                track_key = f"{sheet_name}::{block['block_index']}"
                 track_id, created = repository.add_track({
                     "dispositivo_id": device_id,
                     "campana_id": campaign_id,
                     "archivo": sheet_name,
+                    "track_key": track_key,
                     "canal": str(block["channel"]),
                     "fecha": str(block["date"]),
                     "descripcion": "Track Vt",

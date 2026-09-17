@@ -7,6 +7,7 @@ import streamlit as st
 
 from ui.charts import chart_downloads, iv_chart, track_chart
 from ui.theme import banner
+from ui.ztc import render_panel as render_ztc_panel
 
 
 def _label(row):
@@ -34,27 +35,47 @@ def _render_comparison(repository):
     default_campaigns = [label for label, value in campaign_options.items() if value in loaded.get("campaigns", [])]
     selected_campaigns = st.multiselect("Campañas", list(campaign_options), default=default_campaigns, key="workbench_campaigns")
     campaign_ids = [campaign_options[label] for label in selected_campaigns]
-    measurements = repository.measurements_for_campaigns(campaign_ids) if campaign_ids else repository.measurements_for_devices(selected_device_ids)
-    filter_text = st.text_input("Filtro de archivo, descripción o campaña", value=loaded.get("filter_text", ""))
+    measurements = repository.iv_measurements()
+    measurements = measurements[measurements.dispositivo_id.isin(selected_device_ids)]
+    if campaign_ids:
+        measurements = measurements[measurements.campana_id.isin(campaign_ids)]
+    filter_text = st.text_input("Buscar en todas las columnas", value=loaded.get("filter_text", ""))
+    device_filter = st.multiselect("Dispositivo", sorted(measurements.dispositivo.unique()), key="workbench_device_filter") if not measurements.empty else []
+    campaign_filter = st.multiselect("Campaña", sorted(measurements.campana.unique()), key="workbench_campaign_filter") if not measurements.empty else []
     state_options = sorted(measurements["estado"].dropna().astype(str).unique()) if not measurements.empty else []
     filter_states = st.multiselect("Estados", state_options, default=[state for state in loaded.get("states", []) if state in state_options])
     filter_date = st.text_input("Filtro de fecha", value=loaded.get("date", ""), placeholder="Ej.: 2025-03")
+    class_options = sorted(measurements["clase"].dropna().astype(str).unique()) if not measurements.empty else []
+    filter_classes = st.multiselect("Clase", class_options, key="workbench_classes")
     if filter_text:
-        searchable = measurements[["archivo", "descripcion", "campana"]].fillna("").astype(str).agg(" ".join, axis=1)
+        searchable = measurements.fillna("").astype(str).agg(" ".join, axis=1)
         measurements = measurements[searchable.str.contains(filter_text, case=False, regex=False)]
+    if device_filter:
+        measurements = measurements[measurements.dispositivo.isin(device_filter)]
+    if campaign_filter:
+        measurements = measurements[measurements.campana.isin(campaign_filter)]
     if filter_states:
         measurements = measurements[measurements.estado.astype(str).isin(filter_states)]
+    if filter_classes:
+        measurements = measurements[measurements.clase.astype(str).isin(filter_classes)]
     if filter_date:
         measurements = measurements[measurements.fecha.astype(str).str.contains(filter_date, case=False, regex=False)]
     if measurements.empty:
         st.info("Selecciona al menos un dispositivo o campaña con mediciones.")
         return
+    measurement_labels = {f"{row.dispositivo} | {row.campana} | {row.archivo} (id {row.id})": int(row.id) for row in measurements.itertuples()}
+    selected_labels = st.multiselect("Mediciones seleccionadas", list(measurement_labels), default=list(measurement_labels), key="workbench_measurements")
+    selected_ids = [measurement_labels[label] for label in selected_labels]
+    measurements = measurements[measurements.id.isin(selected_ids)]
     st.caption(f"{len(measurements)} curvas I-V seleccionadas")
-    points = {int(row.id): repository.points(int(row.id)) for row in measurements.itertuples()}
-    iv_figure = iv_chart(measurements, points)
-    st.plotly_chart(iv_figure, width="stretch")
-    chart_downloads(iv_figure, "comparacion_iv", "comparison_iv")
-    st.dataframe(measurements[["dispositivo", "campana", "archivo", "fecha", "clase", "estado"]], width="stretch", hide_index=True)
+    left, right = st.columns([1.35, 1], gap="large")
+    with left:
+        st.data_editor(measurements[["id", "dispositivo", "campana", "archivo", "fecha", "clase", "estado"]], width="stretch", hide_index=True, disabled=True, key="workbench_measurement_table")
+    with right:
+        points = {int(row.id): repository.points(int(row.id)) for row in measurements.itertuples()}
+        iv_figure = iv_chart(measurements, points)
+        st.plotly_chart(iv_figure, width="stretch")
+        st.download_button("Exportar gráfico I-V (HTML)", iv_figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "comparacion_iv.html", "text/html", key="comparison_iv_export")
 
     track_frames = []
     for device_id in selected_device_ids:
@@ -63,12 +84,20 @@ def _render_comparison(repository):
             track_frames.append(track_frame)
     tracks = pd.concat(track_frames, ignore_index=True) if track_frames else pd.DataFrame()
     if not tracks.empty:
+        channel_options = sorted(tracks.canal.dropna().astype(str).unique())
+        selected_channels = st.multiselect("Canal de medición", channel_options, default=channel_options, key="workbench_track_channels")
+        if selected_channels:
+            tracks = tracks[tracks.canal.astype(str).isin(selected_channels)]
+    if not tracks.empty:
         st.subheader("Track Vt de la misma selección")
         track_points = {int(row.id): repository.track_points(int(row.id)) for row in tracks.itertuples()}
         track_figure = track_chart(tracks, track_points)
-        st.plotly_chart(track_figure, width="stretch")
-        chart_downloads(track_figure, "comparacion_track_vt", "comparison_track")
-        st.dataframe(tracks[["dispositivo", "campana", "archivo", "canal", "fecha"]], width="stretch", hide_index=True)
+        track_left, track_right = st.columns([1.35, 1], gap="large")
+        with track_left:
+            st.data_editor(tracks[["id", "dispositivo", "campana", "archivo", "canal", "fecha"]], width="stretch", hide_index=True, disabled=True, key="workbench_track_table")
+        with track_right:
+            st.plotly_chart(track_figure, width="stretch")
+            st.download_button("Exportar Track Vt (HTML)", track_figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "comparacion_track_vt.html", "text/html", key="comparison_track_export")
     save_name = st.text_input("Nombre de la vista", key="workbench_view_name")
     if st.button("Guardar vista", key="save_workbench_view") and save_name.strip():
         repository.save_workbench_view(save_name, {"devices": selected_device_ids, "campaigns": campaign_ids, "filter_text": filter_text, "states": filter_states, "date": filter_date})
@@ -221,7 +250,7 @@ def _render_absorbed_dose(repository):
 
 def render(repository):
     banner("Mesa de trabajo", "Workbench", "Armá comparaciones, revisá un dispositivo y conectá campañas con la base.")
-    comparison, device, matching, dose = st.tabs(["Comparador", "Dispositivo", "Matching", "Dosis absorbida"])
+    comparison, device, matching, dose, ztc = st.tabs(["Comparador", "Dispositivo", "Matching", "Dosis absorbida", "Análisis ZTC"])
     with comparison:
         _render_comparison(repository)
     with device:
@@ -230,3 +259,5 @@ def render(repository):
         _render_matching(repository)
     with dose:
         _render_absorbed_dose(repository)
+    with ztc:
+        render_ztc_panel(repository)

@@ -27,3 +27,8 @@ def initialize_database(path: Path | str = DATABASE_PATH) -> None:
             connection.execute("ALTER TABLE dispositivos ADD COLUMN tag TEXT")
         if "numero" not in device_columns:
             connection.execute("ALTER TABLE dispositivos ADD COLUMN numero TEXT")
+        track_columns = {row["name"] for row in connection.execute("PRAGMA table_info(tracks_vt)")}
+        if "track_key" not in track_columns:
+            connection.execute("ALTER TABLE tracks_vt ADD COLUMN track_key TEXT")
+            connection.execute("UPDATE tracks_vt SET track_key = 'legacy-' || id WHERE track_key IS NULL")
+        connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_device_key ON tracks_vt(dispositivo_id, track_key)")

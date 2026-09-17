@@ -113,8 +113,8 @@ class Repository:
 
     def add_track(self, values: dict[str, Any]) -> tuple[int, bool]:
         existing = self.connection.execute(
-            "SELECT id FROM tracks_vt WHERE dispositivo_id = ? AND archivo = ? AND canal = ?",
-            (values["dispositivo_id"], values["archivo"], values["canal"]),
+            "SELECT id FROM tracks_vt WHERE dispositivo_id = ? AND track_key = ?",
+            (values["dispositivo_id"], values["track_key"]),
         ).fetchone()
         if existing:
             track_id = int(existing["id"])
@@ -129,8 +129,8 @@ class Repository:
             )
             return track_id, False
         cursor = self.connection.execute(
-            """INSERT INTO tracks_vt(dispositivo_id, campana_id, archivo, canal, fecha, descripcion, source_sheet)
-               VALUES (:dispositivo_id, :campana_id, :archivo, :canal, :fecha, :descripcion, :source_sheet)""",
+                """INSERT INTO tracks_vt(dispositivo_id, campana_id, archivo, track_key, canal, fecha, descripcion, source_sheet)
+                    VALUES (:dispositivo_id, :campana_id, :archivo, :track_key, :canal, :fecha, :descripcion, :source_sheet)""",
             values,
         )
         return int(cursor.lastrowid), True
