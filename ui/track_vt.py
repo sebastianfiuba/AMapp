@@ -23,6 +23,10 @@ def render(repository):
     selected_channels = st.multiselect("Canal del instrumento", channels, default=channels, key="track_channels")
     if selected_channels:
         tracks = tracks[tracks.canal.astype(str).isin(selected_channels)]
+    track_ids = sorted(tracks.id.astype(int).unique())
+    selected_ids = st.multiselect("ID de medición Track Vt", track_ids, default=track_ids, key="track_ids")
+    if selected_ids:
+        tracks = tracks[tracks.id.isin(selected_ids)]
     if tracks.empty:
         st.info("No hay Tracks Vt para los canales seleccionados.")
         return

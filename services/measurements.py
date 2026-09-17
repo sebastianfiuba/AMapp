@@ -11,10 +11,18 @@ from services.ztc import analyze_curves
 TEMPERATURE_MARKERS = ("temperatura", "temperature", "thermal", "temp", "°c", "grados")
 
 
+def extract_temperature(row) -> float | None:
+    searchable = " ".join(str(getattr(row, field, "") or "") for field in ("archivo", "descripcion", "clase", "estado", "campana"))
+    match = re.search(r"(?:t|temp(?:eratura)?|temperature)\s*[-_=]?\s*(-?\d+(?:[.,]\d+)?)", searchable.casefold())
+    if not match:
+        match = re.search(r"(-?\d+(?:[.,]\d+)?)\s*(?:°\s*c|grados)", searchable.casefold())
+    return float(match.group(1).replace(",", ".")) if match else None
+
+
 def is_temperature_sweep(row) -> bool:
     searchable = " ".join(str(getattr(row, field, "") or "") for field in ("archivo", "descripcion", "clase", "estado", "campana"))
     normalized = searchable.casefold()
-    return any(marker in normalized for marker in TEMPERATURE_MARKERS) or bool(re.search(r"t\s*\d{1,3}(?!\d)", normalized))
+    return extract_temperature(row) is not None or any(marker in normalized for marker in TEMPERATURE_MARKERS)
 
 
 def temperature_measurements(measurements: pd.DataFrame) -> pd.DataFrame:
@@ -27,8 +35,14 @@ def campaign_analysis(repository: Repository, campaign_id: int, measurements: pd
     measurements = repository.iv_measurements(campaign_id) if measurements is None else measurements
     if measurements.empty:
         raise ValueError("la campana no tiene mediciones")
-    curves = [repository.points(int(row.id)) for row in measurements.itertuples()]
-    result, dispersion = analyze_curves(curves)
+    rows = list(measurements.itertuples())
+    temperatures = [extract_temperature(row) for row in rows]
+    if any(value is None for value in temperatures):
+        raise ValueError("cada barrido de temperatura necesita una temperatura identificable en sus metadatos")
+    if len(set(temperatures)) < 2:
+        raise ValueError("se necesitan al menos dos temperaturas distintas para calcular ZTC")
+    curves = [repository.points(int(row.id)) for row in rows]
+    result, dispersion = analyze_curves(curves, temperatures)
     repository.save_ztc(campaign_id, result.vt_ztc, result.i_ztc)
     return {"vt_ztc": result.vt_ztc, "i_ztc": result.i_ztc, "cantidad_mediciones": result.cantidad_mediciones}, dispersion
 
