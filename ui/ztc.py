@@ -1,10 +1,11 @@
 import json
 
+import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
 
-from services.measurements import campaign_analysis, extract_temperature, individual_result, temperature_measurements
+from services.measurements import campaign_analysis_methods, extract_temperature, individual_result, temperature_measurements
 from ui.charts import campaign_context, iv_chart
 from ui.theme import banner
 from utils.helpers import format_current
@@ -61,11 +62,11 @@ def _render_analysis(repository):
 def _render_campaign(repository, campaign, campaign_id: int):
     measurements = temperature_measurements(repository.iv_measurements(campaign_id))
     st.caption(f"{len(measurements)} medicion(es) disponibles")
-    method = st.selectbox("Método ZTC", ["dI/dT", "error relativo"], key=f"ztc_method_{campaign_id}", help="dI/dT busca pendiente térmica cero. Error relativo minimiza la diferencia porcentual entre corrientes a un mismo VT.")
     if st.button("Calcular / actualizar ZTC", type="primary"):
         try:
-            result, _ = campaign_analysis(repository, campaign_id, measurements, method)
+            result, dispersion = campaign_analysis_methods(repository, campaign_id, measurements)
             st.session_state[f"ztc_{campaign_id}"] = result
+            st.session_state[f"ztc_dispersion_{campaign_id}"] = dispersion
             st.success("Analisis guardado.")
         except ValueError as error:
             st.error(str(error))
@@ -73,11 +74,17 @@ def _render_campaign(repository, campaign, campaign_id: int):
     stored = repository.ztc_results()
     if result is None and not stored.empty and campaign_id in stored.campana_id.values:
         row = stored[stored.campana_id == campaign_id].iloc[0]
-        result = {"vt_ztc": row.vt_ztc, "i_ztc": row.i_ztc, "cantidad_mediciones": len(measurements)}
+        result = {"vt_ztc": row.vt_ztc, "i_ztc": row.i_ztc, "cantidad_mediciones": len(measurements),
+                  "didt": {"vt_ztc": row.vt_ztc, "i_ztc": row.i_ztc}, "relative": {"vt_ztc": row.vt_ztc, "i_ztc": row.i_ztc}}
     if result:
-        st.metric("VT ZTC", f"{result['vt_ztc']:.6g} V")
-        st.metric("I ZTC", format_current(result["i_ztc"]))
-        st.caption(f"Método: {result.get('metodo', method)} | Error relativo en el cruce: {result.get('error_relativo', 0):.3%}")
+        left, right = st.columns(2)
+        with left:
+            st.metric("VT ZTC | dI/dT", f"{result['didt']['vt_ztc']:.6g} V")
+            st.metric("I ZTC | dI/dT", format_current(result["didt"]["i_ztc"]))
+        with right:
+            st.metric("VT ZTC | error relativo", f"{result['relative']['vt_ztc']:.6g} V")
+            st.metric("I ZTC | error relativo", format_current(result["relative"]["i_ztc"]))
+        st.caption(f"Dispersión relativa en dI/dT: {result.get('error_relativo', 0):.3%}")
         points = {int(row.id): repository.points(int(row.id)) for row in measurements.itertuples()}
         figure = go.Figure()
         colors = ["#0c7285", "#bd7b19", "#c34d46", "#4f6d7a", "#6b5b95", "#4d8b5f"]
@@ -87,7 +94,8 @@ def _render_campaign(repository, campaign, campaign_id: int):
             context = campaign_context(campaign.numero)
             figure.add_trace(go.Scatter(x=curve.v, y=curve.i, mode="lines+markers", line={"color": colors[index % len(colors)]},
                                          name=f"{context} | {measurement.archivo} | {temperature:g} °C" if temperature is not None else f"{context} | {measurement.archivo}"))
-        figure.add_trace(go.Scatter(x=[result["vt_ztc"]], y=[result["i_ztc"]], mode="markers", marker={"size": 14, "symbol": "star", "color": "crimson"}, name="ZTC"))
+        figure.add_trace(go.Scatter(x=[result["didt"]["vt_ztc"]], y=[result["didt"]["i_ztc"]], mode="markers", marker={"size": 14, "symbol": "star", "color": "crimson"}, name="ZTC dI/dT"))
+        figure.add_trace(go.Scatter(x=[result["relative"]["vt_ztc"]], y=[result["relative"]["i_ztc"]], mode="markers", marker={"size": 14, "symbol": "diamond", "color": "black"}, name="ZTC error relativo"))
         figure.update_layout(template="plotly_white", xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified")
         st.plotly_chart(figure, width="stretch")
         rows = []
@@ -98,6 +106,35 @@ def _render_campaign(repository, campaign, campaign_id: int):
                 st.warning(f"{measurement.archivo}: {error}")
         if rows:
             st.dataframe(rows, width="stretch", hide_index=True)
+        dispersion = st.session_state.get(f"ztc_dispersion_{campaign_id}")
+        if dispersion is None:
+            try:
+                _, dispersion = campaign_analysis_methods(repository, campaign_id, measurements)
+            except ValueError:
+                dispersion = None
+        if dispersion is not None:
+            _render_dispersion_dashboard(repository, measurements, dispersion, f"Campaña {campaign.numero}")
+
+
+def _render_dispersion_dashboard(repository, measurements, dispersion: pd.DataFrame, title: str):
+    st.subheader(f"Dispersión | {title}")
+    left, right = st.columns(2)
+    with left:
+        figure = go.Figure()
+        figure.add_trace(go.Scatter(x=dispersion.v, y=dispersion.relative_error * 100, mode="lines", name="Error relativo [%]"))
+        figure.add_trace(go.Scatter(x=dispersion.v, y=np.abs(dispersion.d_i_d_t), mode="lines", name="|dI/dT|", yaxis="y2"))
+        figure.update_layout(template="plotly_white", xaxis_title="VT [V]", yaxis_title="Error relativo [%]", yaxis2={"title": "|dI/dT|", "overlaying": "y", "side": "right"}, hovermode="x unified")
+        st.plotly_chart(figure, width="stretch")
+    with right:
+        st.dataframe(pd.DataFrame({"Dato": ["VT mínimo error relativo", "VT dI/dT", "Error relativo mínimo", "Temperaturas"],
+                                   "Valor": [float(dispersion.loc[dispersion.relative_error.idxmin(), "v"]), float(dispersion.v.iloc[np.abs(dispersion.d_i_d_t).argmin()]),
+                                              f"{dispersion.relative_error.min():.3%}", dispersion.temperatures.iloc[0]]}), hide_index=True, width="stretch")
+        labels = {f"{row.archivo} | {extract_temperature(row):g} °C": int(row.id) for row in measurements.itertuples()}
+        selected = st.selectbox("Medición para detalle", list(labels), key=f"dispersion_measurement_{title}")
+        selected_points = repository.points(labels[selected])
+        selected_row = measurements[measurements.id == labels[selected]].iloc[0]
+        st.dataframe(pd.DataFrame({"Característica": ["Archivo", "Temperatura", "Puntos", "V mínimo", "V máximo", "I mínimo", "I máximo"],
+                                   "Valor": [selected_row.archivo, extract_temperature(selected_row), len(selected_points), selected_points.v.min(), selected_points.v.max(), selected_points.i.min(), selected_points.i.max()]}), hide_index=True, width="stretch")
 
 
 def _render_evolution(repository, campaigns, labels):
@@ -107,7 +144,7 @@ def _render_evolution(repository, campaigns, labels):
     selected_device = st.selectbox("Dispositivo", devices, key="ztc_evolution_device")
     device_campaigns = campaigns[campaigns.dispositivo == selected_device].copy()
     device_labels = [campaign_label(row) for row in device_campaigns.itertuples()]
-    selected = st.multiselect("Campañas a analizar", device_labels, default=device_labels[:2], key="ztc_evolution_campaigns")
+    selected = st.multiselect("Campañas a analizar", device_labels, default=device_labels, key="ztc_evolution_campaigns")
     subcampaign_name = st.text_input("Nombre normalizado", value="Subcampaña 1", key="ztc_subcampaign_name")
     set_name = st.text_input("Nombre del conjunto", key="ztc_evolution_set_name")
     if st.button("Guardar conjunto de evolución", key="save_ztc_evolution_set") and set_name.strip():
@@ -129,15 +166,18 @@ def _render_evolution(repository, campaigns, labels):
     if not selected_ids:
         st.info("Selecciona campañas para calcular su evolución.")
         return
-    stored = repository.ztc_results()
     rows = []
+    dispersions = []
     for campaign_id in selected_ids:
         campaign = campaigns[campaigns.id == campaign_id].iloc[0]
         measurements = temperature_measurements(repository.iv_measurements(campaign_id))
         try:
-            result, _ = campaign_analysis(repository, campaign_id, measurements, "dI/dT")
+            result, dispersion = campaign_analysis_methods(repository, campaign_id, measurements)
             rows.append({"campana_id": campaign_id, "dispositivo": campaign.dispositivo, "campaña": campaign.numero,
-                         "VT ZTC [V]": result["vt_ztc"], "I ZTC [µA]": result["i_ztc"] * 1_000_000, "mediciones": result["cantidad_mediciones"]})
+                         "VT dI/dT [V]": result["didt"]["vt_ztc"], "I dI/dT [µA]": result["didt"]["i_ztc"] * 1_000_000,
+                         "VT relativo [V]": result["relative"]["vt_ztc"], "I relativo [µA]": result["relative"]["i_ztc"] * 1_000_000,
+                         "error relativo": result.get("error_relativo"), "mediciones": result["cantidad_mediciones"]})
+            dispersions.append(dispersion.assign(campaña=str(campaign.numero), dispositivo=campaign.dispositivo))
         except ValueError as error:
             st.warning(f"{campaign.dispositivo} | {campaign.numero}: {error}")
     if not rows:
@@ -152,15 +192,28 @@ def _render_evolution(repository, campaigns, labels):
             points = repository.points(int(measurement.id))
             figure.add_trace(go.Scatter(x=points.v, y=points.i, mode="lines", line={"color": colors[index % len(colors)]},
                                          legendgroup=str(row["campana_id"]), name=f"{row['dispositivo']} | {row['campaña']} | {campaign_context(row['campaña'])}"))
-        figure.add_trace(go.Scatter(x=[row["VT ZTC [V]"]], y=[row["I ZTC [µA]"] / 1_000_000], mode="markers",
+        figure.add_trace(go.Scatter(x=[row["VT dI/dT [V]"]], y=[row["I dI/dT [µA]"] / 1_000_000], mode="markers",
                                      marker={"size": 14, "symbol": "star", "color": colors[index % len(colors)]},
-                                     legendgroup=str(row["campana_id"]), name=f"ZTC | {row['campaña']}"))
+                                     legendgroup=str(row["campana_id"]), name=f"ZTC dI/dT | {row['campaña']}"))
     figure.update_layout(template="plotly_white", xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified")
     st.plotly_chart(figure, width="stretch")
-    progression = go.Figure(go.Scatter(x=frame["campaña"], y=frame["I ZTC [µA]"], mode="lines+markers", text=frame["dispositivo"], name="I ZTC"))
-    progression.update_layout(template="plotly_white", xaxis_title="Campaña", yaxis_title="I ZTC [µA]", hovermode="x unified")
-    st.subheader("Progresión de I ZTC")
-    st.plotly_chart(progression, width="stretch")
+    left, right = st.columns(2)
+    with left:
+        progression = go.Figure()
+        progression.add_trace(go.Scatter(x=frame["campaña"], y=frame["I dI/dT [µA]"], mode="lines+markers", text=frame["dispositivo"], name="dI/dT"))
+        progression.add_trace(go.Scatter(x=frame["campaña"], y=frame["I relativo [µA]"], mode="lines+markers", text=frame["dispositivo"], name="error relativo"))
+        progression.update_layout(template="plotly_white", xaxis_title="Campaña", yaxis_title="I ZTC [µA]", hovermode="x unified")
+        st.subheader("Progresión de I ZTC")
+        st.plotly_chart(progression, width="stretch")
+    with right:
+        all_dispersion = pd.concat(dispersions, ignore_index=True)
+        dispersion_figure = go.Figure()
+        for (device, campaign), group in all_dispersion.groupby(["dispositivo", "campaña"]):
+            dispersion_figure.add_trace(go.Scatter(x=group.v, y=group.relative_error * 100, mode="lines", name=f"{device} | {campaign}"))
+        dispersion_figure.update_layout(template="plotly_white", xaxis_title="VT [V]", yaxis_title="Error relativo [%]", legend_title="Dispositivo | Campaña", hovermode="x unified")
+        st.subheader("Dispersión de todas las campañas")
+        st.plotly_chart(dispersion_figure, width="stretch")
+        st.dataframe(all_dispersion.groupby(["dispositivo", "campaña"], as_index=False).agg(error_relativo_minimo=("relative_error", "min"), vt_error_minimo=("v", "min")), hide_index=True, width="stretch")
     st.caption("Las estrellas son los puntos ZTC de cada campaña. La tabla expresa la corriente en µA.")
 
 
@@ -173,7 +226,6 @@ def _render_device_comparison(repository):
     st.subheader("ZTC de todos los dispositivos")
     st.caption("Se analizan únicamente barridos con temperatura numérica y se muestran bajo una subcampaña normalizada.")
     subcampaign_name = st.text_input("Subcampaña a visualizar", value="Subcampaña 1", key="ztc_devices_subcampaign")
-    method = st.selectbox("Método ZTC", ["dI/dT", "error relativo"], key="ztc_devices_method")
     devices = repository.devices()
     campaigns = repository.campaigns()
     rows = []
@@ -185,28 +237,32 @@ def _render_device_comparison(repository):
             if thermal.empty:
                 continue
             try:
-                result, _ = campaign_analysis(repository, int(campaign.id), thermal, method)
+                result, _ = campaign_analysis_methods(repository, int(campaign.id), thermal)
             except ValueError:
                 continue
             rows.append({"subcampaña": subcampaign_name.strip() or "Subcampaña 1", "dispositivo": device.nombre,
-                         "campaña original": campaign.numero, "VT ZTC [V]": result["vt_ztc"],
-                         "I ZTC [A]": result["i_ztc"], "I ZTC": format_current(result["i_ztc"]),
-                         "error relativo": result.get("error_relativo")})
-            curves.append((device.nombre, campaign.numero, result["vt_ztc"], result["i_ztc"]))
+                         "campaña original": campaign.numero, "VT dI/dT [V]": result["didt"]["vt_ztc"],
+                         "I dI/dT [A]": result["didt"]["i_ztc"], "I dI/dT": format_current(result["didt"]["i_ztc"]),
+                         "VT relativo [V]": result["relative"]["vt_ztc"], "I relativo [A]": result["relative"]["i_ztc"],
+                         "I relativo": format_current(result["relative"]["i_ztc"]), "error relativo": result.get("error_relativo")})
+            curves.append((device.nombre, campaign.numero, result["didt"]["vt_ztc"], result["didt"]["i_ztc"], result["relative"]["vt_ztc"], result["relative"]["i_ztc"]))
     if not rows:
         st.info("No hay campañas con al menos dos temperaturas numéricas.")
         return
     frame = pd.DataFrame(rows)
     st.dataframe(frame, width="stretch", hide_index=True)
     figure = go.Figure()
-    for device_name, campaign_number, vt, current in curves:
-        figure.add_trace(go.Scatter(x=[vt], y=[current], mode="markers+text", text=[f"{device_name} | {campaign_number}"], textposition="top center",
-                                    name=f"{device_name} | {campaign_number}", hovertemplate="%{text}<br>VT=%{x} V<br>I=%{y} A<extra></extra>"))
+    for device_name, campaign_number, vt_didt, current_didt, vt_relative, current_relative in curves:
+        figure.add_trace(go.Scatter(x=[vt_didt], y=[current_didt], mode="markers+text", text=[f"{device_name} | {campaign_number} | dI/dT"], textposition="top center",
+                                    name=f"{device_name} | {campaign_number} | dI/dT", hovertemplate="%{text}<br>VT=%{x} V<br>I=%{y} A<extra></extra>"))
+        figure.add_trace(go.Scatter(x=[vt_relative], y=[current_relative], mode="markers", marker={"symbol": "diamond"},
+                                    text=[f"{device_name} | {campaign_number} | relativo"], name=f"{device_name} | {campaign_number} | relativo", hovertemplate="%{text}<br>VT=%{x} V<br>I=%{y} A<extra></extra>"))
     figure.update_layout(template="plotly_white", xaxis_title="VT ZTC [V]", yaxis_title="I ZTC [A]", legend_title="Dispositivo | Campaña", hovermode="closest")
     st.plotly_chart(figure, width="stretch")
     progression = go.Figure()
     for device_name, device_frame in frame.groupby("dispositivo"):
-        progression.add_trace(go.Scatter(x=device_frame["campaña original"].astype(str), y=device_frame["I ZTC [A]"], mode="lines+markers", name=device_name))
+        progression.add_trace(go.Scatter(x=device_frame["campaña original"].astype(str), y=device_frame["I dI/dT [A]"], mode="lines+markers", name=f"{device_name} | dI/dT"))
+        progression.add_trace(go.Scatter(x=device_frame["campaña original"].astype(str), y=device_frame["I relativo [A]"], mode="lines+markers", name=f"{device_name} | relativo"))
     progression.update_layout(template="plotly_white", xaxis_title="Campaña original", yaxis_title="I ZTC [A]", legend_title="Dispositivo")
     st.plotly_chart(progression, width="stretch")
 
