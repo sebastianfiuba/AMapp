@@ -46,7 +46,7 @@ def _render_analysis(repository):
         st.info("No hay campañas con barridos de temperatura para los dispositivos seleccionados.")
         return
     labels = [campaign_label(row) for row in campaigns.itertuples()]
-    tab_single, tab_evolution = st.tabs(["Una campaña", "Evolución y secuencia"])
+    tab_single, tab_evolution, tab_devices = st.tabs(["Una campaña", "Evolución y secuencia", "Comparar dispositivos"])
     with tab_single:
         selected = st.selectbox("Campaña", labels, key="ztc_single_campaign")
         campaign = campaigns.iloc[labels.index(selected)]
@@ -54,6 +54,8 @@ def _render_analysis(repository):
         _render_campaign(repository, campaign, campaign_id)
     with tab_evolution:
         _render_evolution(repository, campaigns, labels)
+    with tab_devices:
+        _render_device_comparison(repository)
 
 
 def _render_campaign(repository, campaign, campaign_id: int):
@@ -106,9 +108,12 @@ def _render_evolution(repository, campaigns, labels):
     device_campaigns = campaigns[campaigns.dispositivo == selected_device].copy()
     device_labels = [campaign_label(row) for row in device_campaigns.itertuples()]
     selected = st.multiselect("Campañas a analizar", device_labels, default=device_labels[:2], key="ztc_evolution_campaigns")
+    subcampaign_name = st.text_input("Nombre normalizado", value="Subcampaña 1", key="ztc_subcampaign_name")
     set_name = st.text_input("Nombre del conjunto", key="ztc_evolution_set_name")
     if st.button("Guardar conjunto de evolución", key="save_ztc_evolution_set") and set_name.strip():
-        repository.save_workbench_view(set_name, {"type": "ztc_evolution", "device_id": int(device_campaigns.iloc[0].dispositivo_id), "campaign_ids": [int(device_campaigns.iloc[device_labels.index(label)].id) for label in selected]})
+        repository.save_workbench_view(set_name, {"type": "ztc_evolution", "subcampaign": subcampaign_name.strip() or "Subcampaña 1",
+                                                  "device_id": int(device_campaigns.iloc[0].dispositivo_id),
+                                                  "campaign_ids": [int(device_campaigns.iloc[device_labels.index(label)].id) for label in selected]})
         repository.connection.commit()
         st.success("Conjunto de evolución guardado.")
     saved_sets = repository.workbench_views()
@@ -117,7 +122,9 @@ def _render_evolution(repository, campaigns, labels):
         saved_name = st.selectbox("Cargar conjunto guardado", ["(ninguno)"] + saved_sets.nombre.tolist(), key="load_ztc_evolution_set")
         if saved_name != "(ninguno)":
             saved = json.loads(saved_sets.loc[saved_sets.nombre == saved_name, "configuracion"].iloc[0])
+            subcampaign_name = saved.get("subcampaign", subcampaign_name)
             selected = [label for label, value in zip(device_labels, device_campaigns.id) if int(value) in saved.get("campaign_ids", [])]
+            st.caption(f"Visualizando: {subcampaign_name}")
     selected_ids = [int(device_campaigns.iloc[device_labels.index(label)].id) for label in selected]
     if not selected_ids:
         st.info("Selecciona campañas para calcular su evolución.")
@@ -158,28 +165,50 @@ def _render_evolution(repository, campaigns, labels):
 
 
 def _render_links(repository, campaigns, labels):
-    st.subheader("Secuencia de campañas")
-    st.caption("Define qué campaña sigue a otra y marca el motivo para decidir comparaciones ZTC.")
-    options = {label: int(campaigns.iloc[index].id) for index, label in enumerate(labels)}
-    previous = st.selectbox("Campaña anterior", labels, key="link_previous")
-    following = st.selectbox("Campaña siguiente", labels, key="link_following")
-    indeterminate = st.checkbox("Orden todavía indeterminado", help="Usalo cuando sabés que hay relación, pero aún no la etapa exacta.")
-    order = st.number_input("Etapa", min_value=1, value=1, step=1, disabled=indeterminate)
-    reason = st.text_input("Motivo / tratamiento", placeholder="Ej.: después de Curie, antes de horno")
-    if st.button("Guardar secuencia", type="primary"):
-        if previous == following:
-            st.error("La campaña anterior y siguiente deben ser distintas.")
-        else:
-            repository.link_campaigns(options[previous], options[following], None if indeterminate else int(order), reason)
-            repository.connection.commit()
-            st.success("Secuencia guardada.")
-    links = repository.campaign_links()
-    if not links.empty:
-        display_links = links[["dispositivo", "anterior", "siguiente", "orden", "motivo"]].copy()
-        display_links["orden"] = display_links["orden"].replace(0, "Indeterminada").fillna("Indeterminada")
-        st.dataframe(display_links, width="stretch", hide_index=True)
-    _render_sequence_editor(repository, device_campaigns, device_labels)
-    _render_recommendations(repository, device_campaigns)
+    _render_sequence_editor(repository, campaigns, labels)
+    _render_recommendations(repository, campaigns)
+
+
+def _render_device_comparison(repository):
+    st.subheader("ZTC de todos los dispositivos")
+    st.caption("Se analizan únicamente barridos con temperatura numérica y se muestran bajo una subcampaña normalizada.")
+    subcampaign_name = st.text_input("Subcampaña a visualizar", value="Subcampaña 1", key="ztc_devices_subcampaign")
+    method = st.selectbox("Método ZTC", ["dI/dT", "error relativo"], key="ztc_devices_method")
+    devices = repository.devices()
+    campaigns = repository.campaigns()
+    rows = []
+    curves = []
+    for device in devices.itertuples():
+        device_campaigns = campaigns[campaigns.dispositivo_id == device.id]
+        for campaign in device_campaigns.itertuples():
+            thermal = temperature_measurements(repository.iv_measurements(int(campaign.id)))
+            if thermal.empty:
+                continue
+            try:
+                result, _ = campaign_analysis(repository, int(campaign.id), thermal, method)
+            except ValueError:
+                continue
+            rows.append({"subcampaña": subcampaign_name.strip() or "Subcampaña 1", "dispositivo": device.nombre,
+                         "campaña original": campaign.numero, "VT ZTC [V]": result["vt_ztc"],
+                         "I ZTC [A]": result["i_ztc"], "I ZTC": format_current(result["i_ztc"]),
+                         "error relativo": result.get("error_relativo")})
+            curves.append((device.nombre, campaign.numero, result["vt_ztc"], result["i_ztc"]))
+    if not rows:
+        st.info("No hay campañas con al menos dos temperaturas numéricas.")
+        return
+    frame = pd.DataFrame(rows)
+    st.dataframe(frame, width="stretch", hide_index=True)
+    figure = go.Figure()
+    for device_name, campaign_number, vt, current in curves:
+        figure.add_trace(go.Scatter(x=[vt], y=[current], mode="markers+text", text=[f"{device_name} | {campaign_number}"], textposition="top center",
+                                    name=f"{device_name} | {campaign_number}", hovertemplate="%{text}<br>VT=%{x} V<br>I=%{y} A<extra></extra>"))
+    figure.update_layout(template="plotly_white", xaxis_title="VT ZTC [V]", yaxis_title="I ZTC [A]", legend_title="Dispositivo | Campaña", hovermode="closest")
+    st.plotly_chart(figure, width="stretch")
+    progression = go.Figure()
+    for device_name, device_frame in frame.groupby("dispositivo"):
+        progression.add_trace(go.Scatter(x=device_frame["campaña original"].astype(str), y=device_frame["I ZTC [A]"], mode="lines+markers", name=device_name))
+    progression.update_layout(template="plotly_white", xaxis_title="Campaña original", yaxis_title="I ZTC [A]", legend_title="Dispositivo")
+    st.plotly_chart(progression, width="stretch")
 
 
 def _render_sequence_editor(repository, campaigns, labels):

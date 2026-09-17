@@ -8,11 +8,8 @@ from database.repository import Repository
 from services.ztc import analyze_curves
 
 
-TEMPERATURE_MARKERS = ("temperatura", "temperature", "thermal", "temp", "°c", "grados")
-
-
 def extract_temperature(row) -> float | None:
-    searchable = " ".join(str(getattr(row, field, "") or "") for field in ("archivo", "descripcion", "clase", "estado", "campana"))
+    searchable = "|".join(str(getattr(row, field, "") or "") for field in ("archivo", "descripcion", "clase", "estado", "campana"))
     match = re.search(r"(?:t|temp(?:eratura)?|temperature)\s*[-_=]?\s*(-?\d+(?:[.,]\d+)?)", searchable.casefold())
     if not match:
         match = re.search(r"(-?\d+(?:[.,]\d+)?)\s*(?:°\s*c|grados)", searchable.casefold())
@@ -20,9 +17,7 @@ def extract_temperature(row) -> float | None:
 
 
 def is_temperature_sweep(row) -> bool:
-    searchable = " ".join(str(getattr(row, field, "") or "") for field in ("archivo", "descripcion", "clase", "estado", "campana"))
-    normalized = searchable.casefold()
-    return extract_temperature(row) is not None or any(marker in normalized for marker in TEMPERATURE_MARKERS)
+    return extract_temperature(row) is not None
 
 
 def temperature_measurements(measurements: pd.DataFrame) -> pd.DataFrame:
