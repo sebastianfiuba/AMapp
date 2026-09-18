@@ -59,7 +59,7 @@ def campaign_analysis_methods(repository: Repository, campaign_id: int, measurem
     result = {
         "vt_ztc": combined.vt_ztc,
         "i_ztc": combined.i_ztc,
-        "cantidad_mediciones": physical.cantidad_mediciones,
+        "cantidad_mediciones": combined.cantidad_mediciones,
         "metodo": "combinado",
         "error_relativo": combined.error_relativo,
         "combined_score": combined_dispersion["combined_score_at_vt"].iloc[0],

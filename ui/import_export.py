@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 
 from services.excel_export import export_excel, export_integrity
 from services.excel_import import detect_input_type, import_excel, import_measurement
@@ -37,8 +38,35 @@ def render(repository):
     else:
         st.success("Integridad OK: no hay mediciones, puntos ni Tracks duplicados.")
     st.download_button("Descargar Excel", export_excel(repository), "mediciones_exportadas.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    _render_database_view(repository)
     unclassified = repository.unclassified()
     if not unclassified.empty:
         st.subheader("Hojas sin clasificar")
         st.caption("Se conservaron aparte porque no tienen el formato I-V ni Track Vt reconocido.")
         st.dataframe(unclassified[["archivo_origen", "hoja", "tipo", "filas", "columnas"]], width="stretch", hide_index=True)
+
+
+def _render_database_view(repository):
+    st.divider()
+    st.subheader("Visualizar base de datos")
+    tables = {
+        "Dispositivos": repository.devices,
+        "Campañas": repository.campaigns,
+        "Mediciones": repository.measurements,
+        "Puntos I-V": repository.all_points,
+        "Tracks Vt": repository.tracks,
+        "Puntos Track Vt": repository.all_track_points,
+        "Resultados ZTC": repository.ztc_results,
+        "Grupos": repository.measurement_groups,
+        "Secuencias": repository.campaign_links,
+        "Sin clasificar": repository.unclassified,
+    }
+    selected_table = st.selectbox("Tabla", list(tables), key="database_table_view")
+    frame = tables[selected_table]().copy()
+    filter_text = st.text_input("Filtrar registros", key="database_table_filter", placeholder="Texto en cualquier columna")
+    if filter_text and not frame.empty:
+        searchable = frame.fillna("").astype(str).agg(" ".join, axis=1)
+        frame = frame[searchable.str.contains(filter_text, case=False, regex=False)]
+    st.caption(f"{len(frame)} registro(s) visibles")
+    st.dataframe(frame, width="stretch", hide_index=True)
+    st.download_button("Descargar tabla visible CSV", frame.to_csv(index=False).encode("utf-8"), f"{selected_table.lower().replace(' ', '_')}.csv", "text/csv", key="database_table_csv")
