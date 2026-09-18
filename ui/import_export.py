@@ -10,14 +10,21 @@ from ui.theme import banner
 def render(repository):
     banner("Datos y trazabilidad", "Importar / Exportar", "Cargá mediciones, revisá formatos no clasificados y descargá una copia completa.")
     uploaded = st.file_uploader("Selecciona un Excel o una medicion (.xlsx, .xls, .xlsm, .ri)", type=["xlsx", "xls", "xlsm", "ri"])
+    duplicate_mode = st.selectbox(
+        "Si una medición ya existe",
+        options=["actualizar", "conservar", "reemplazar"],
+        format_func={"actualizar": "Actualizar puntos y metadatos", "conservar": "Conservar la existente", "reemplazar": "Reemplazar todos sus puntos"}.get,
+        help="La medición existente nunca se borra. Reemplazar solo sustituye sus puntos por los del archivo.",
+        key="import_duplicate_mode",
+    )
     if uploaded and st.button("Importar datos", type="primary"):
         with st.spinner("Importando..."):
             input_type = detect_input_type(uploaded)
             try:
                 if input_type == "excel":
-                    summary = import_excel(uploaded, repository)
+                    summary = import_excel(uploaded, repository, duplicate_mode)
                 elif input_type == "medicion":
-                    summary = import_measurement(uploaded, repository)
+                    summary = import_measurement(uploaded, repository, duplicate_mode)
                 else:
                     raise ValueError("tipo de archivo no reconocido; usa .xlsx, .xls, .xlsm o .ri")
             except ValueError as error:
@@ -71,7 +78,14 @@ def _render_database_view(repository):
     st.caption(f"{len(frame)} registro(s) visibles")
     if selected_table == "Mediciones" and not frame.empty:
         editable_columns = [column for column in ("fecha", "descripcion", "clase", "estado", "eliminado") if column in frame]
-        edited = st.data_editor(frame, width="stretch", hide_index=True, disabled=[column for column in frame.columns if column not in editable_columns], key="database_measurements_editor")
+        edited = st.data_editor(
+            frame,
+            width="stretch",
+            hide_index=True,
+            disabled=[column for column in frame.columns if column not in editable_columns],
+            column_config={"eliminado": st.column_config.CheckboxColumn("Eliminada", help="Excluir del análisis sin borrar la medición ni sus puntos.")},
+            key="database_measurements_editor",
+        )
         if st.button("Guardar cambios y recalcular ZTC", type="primary", key="save_database_measurements"):
             changed_campaigns = set()
             original = frame.set_index("id")

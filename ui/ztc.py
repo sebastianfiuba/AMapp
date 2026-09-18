@@ -107,7 +107,7 @@ def _render_campaign(repository, campaign, campaign_id: int):
             figure.add_trace(go.Scatter(x=curve.v, y=curve.i, mode="lines+markers", line={"color": colors[index % len(colors)]},
                                          name=f"{context} | {measurement.archivo} | {temperature:g} °C" if temperature is not None else f"{context} | {measurement.archivo}"))
         figure.add_trace(go.Scatter(x=[result["combined"]["vt_ztc"]], y=[result["combined"]["i_ztc"]], mode="markers", marker={"size": 16, "symbol": "star", "color": "crimson"}, name="ZTC combinado"))
-        figure.update_layout(template="plotly_white", xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified")
+        figure.update_layout(height=560, margin={"l": 70, "r": 30, "t": 55, "b": 70}, template="plotly_white", xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified")
         st.plotly_chart(figure, width="stretch")
         rows = []
         for measurement in measurements.itertuples():
@@ -124,14 +124,14 @@ def _render_campaign(repository, campaign, campaign_id: int):
             except ValueError:
                 dispersion = None
         if dispersion is not None:
-            _render_dispersion_dashboard(repository, measurements, dispersion, f"Campaña {campaign.numero}")
+            _render_dispersion_dashboard(repository, measurements, dispersion, f"Campaña {campaign.numero}", (result["combined"]["vt_ztc"], result["combined"]["i_ztc"]))
             candidates = dispersion.attrs.get("crossing_candidates", [])
             if candidates:
                 st.caption("Se detectaron varios cruces de pendiente; el seleccionado queda marcado por su score estable.")
                 st.dataframe(pd.DataFrame(candidates), hide_index=True, width="stretch")
 
 
-def _render_dispersion_dashboard(repository, measurements, dispersion: pd.DataFrame, title: str):
+def _render_dispersion_dashboard(repository, measurements, dispersion: pd.DataFrame, title: str, ztc: tuple[float, float]):
     st.subheader(f"Dispersión | {title}")
     left, right = st.columns(2)
     with left:
@@ -139,7 +139,7 @@ def _render_dispersion_dashboard(repository, measurements, dispersion: pd.DataFr
         figure.add_trace(go.Scatter(x=dispersion.v, y=dispersion.relative_error * 100, mode="lines", name="Error relativo [%]"))
         figure.add_trace(go.Scatter(x=dispersion.v, y=np.abs(dispersion.d_i_d_t), mode="lines", name="|dI/dT|", yaxis="y2"))
         figure.add_trace(go.Scatter(x=dispersion.v, y=dispersion.combined_score, mode="lines", name="Score combinado", yaxis="y3"))
-        figure.update_layout(template="plotly_white", xaxis_title="VT [V]", yaxis_title="Error relativo [%]", yaxis2={"title": "|dI/dT|", "overlaying": "y", "side": "right"}, yaxis3={"title": "Score combinado", "overlaying": "y", "side": "right", "position": 0.92}, hovermode="x unified")
+        figure.update_layout(height=560, margin={"l": 70, "r": 100, "t": 55, "b": 70}, template="plotly_white", xaxis_title="VT [V]", yaxis_title="Error relativo [%]", yaxis2={"title": "|dI/dT|", "overlaying": "y", "side": "right"}, yaxis3={"title": "Score combinado", "overlaying": "y", "side": "right", "position": 0.92}, hovermode="x unified")
         st.plotly_chart(figure, width="stretch")
     with right:
         st.dataframe(pd.DataFrame({"Dato": ["VT mínimo error relativo", "VT dI/dT", "Error relativo mínimo", "Temperaturas"],
@@ -149,6 +149,8 @@ def _render_dispersion_dashboard(repository, measurements, dispersion: pd.DataFr
         selected = st.selectbox("Medición para detalle", list(labels), key=f"dispersion_measurement_{title}")
         selected_points = repository.points(labels[selected])
         selected_row = measurements[measurements.id == labels[selected]].iloc[0]
+        detail_figure = iv_chart(measurements[measurements.id == labels[selected]], {int(selected_row.id): selected_points}, ztc=ztc)
+        st.plotly_chart(detail_figure, width="stretch", key=f"dispersion_measurement_chart_{title}")
         st.dataframe(pd.DataFrame({"Característica": ["Archivo", "Temperatura", "Puntos", "V mínimo", "V máximo", "I mínimo", "I máximo"],
                                    "Valor": [selected_row.archivo, extract_temperature(selected_row), len(selected_points), selected_points.v.min(), selected_points.v.max(), selected_points.i.min(), selected_points.i.max()]}), hide_index=True, width="stretch")
 
@@ -231,13 +233,10 @@ def _render_evolution(repository, campaigns, labels):
             selected_campaign = campaigns[campaigns.id == selected_campaign_id]
             if not selected_campaign.empty:
                 selected_measurements = temperature_measurements(repository.iv_measurements(selected_campaign_id))
-                detail_left, detail_right = st.columns(2)
-                with detail_left:
-                    detail_points = {int(row.id): repository.points(int(row.id)) for row in selected_measurements.itertuples()}
-                    st.plotly_chart(iv_chart(selected_measurements, detail_points), width="stretch", key="ztc_selected_campaign_curves")
-                with detail_right:
-                    st.subheader(f"Campaña seleccionada: {selected_campaign.iloc[0].numero}")
-                    st.dataframe(selected_measurements[["id", "archivo", "fecha", "descripcion", "clase", "estado"]], hide_index=True, width="stretch")
+                st.subheader(f"Campaña seleccionada: {selected_campaign.iloc[0].numero}")
+                st.dataframe(selected_measurements[["id", "archivo", "fecha", "descripcion", "clase", "estado"]], hide_index=True, width="stretch")
+                detail_points = {int(row.id): repository.points(int(row.id)) for row in selected_measurements.itertuples()}
+                st.plotly_chart(iv_chart(selected_measurements, detail_points), width="stretch", key="ztc_selected_campaign_curves")
     st.caption("Las estrellas son los puntos ZTC de cada campaña. La tabla expresa la corriente en µA.")
 
 
@@ -277,7 +276,7 @@ def _render_device_comparison(repository):
         label = f"{row[1]} | {row[2]}"
         figure.add_trace(go.Scatter(x=[row[4]], y=[row[5]], mode="markers+text", text=[label], customdata=[row[1]], textposition="top center",
                                     name=label, hovertemplate="%{text}<br>VT=%{x} V<br>I=%{y} A<extra></extra>"))
-    figure.update_layout(template="plotly_white", xaxis_title="VT ZTC [V]", yaxis_title="I ZTC [A]", legend_title="Dispositivo | Campaña", hovermode="closest")
+    figure.update_layout(height=560, margin={"l": 80, "r": 40, "t": 75, "b": 80}, template="plotly_white", xaxis_title="VT ZTC [V]", yaxis_title="I ZTC [A]", legend_title="Dispositivo | Campaña", hovermode="closest")
     selection = st.plotly_chart(figure, width="stretch", key="ztc_device_comparison", on_select="rerun", selection_mode=("points", "box", "lasso"))
     selected_campaign_id = _selected_point(selection)
     if selected_campaign_id is not None:
@@ -291,7 +290,7 @@ def _render_device_comparison(repository):
     progression = go.Figure()
     for device_name, device_frame in frame.groupby("dispositivo"):
         progression.add_trace(go.Scatter(x=device_frame["campaña original"].astype(str), y=device_frame["I combinado [A]"], mode="lines+markers", name=f"{device_name} | combinado"))
-    progression.update_layout(template="plotly_white", xaxis_title="Campaña original", yaxis_title="I ZTC [A]", legend_title="Dispositivo")
+    progression.update_layout(height=500, margin={"l": 80, "r": 40, "t": 55, "b": 80}, template="plotly_white", xaxis_title="Campaña original", yaxis_title="I ZTC [A]", legend_title="Dispositivo")
     st.plotly_chart(progression, width="stretch")
 
 

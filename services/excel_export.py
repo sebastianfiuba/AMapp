@@ -11,7 +11,7 @@ def export_excel(repository: Repository) -> bytes:
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         repository.devices().to_excel(writer, index=False, sheet_name="Dispositivos")
         repository.campaigns().to_excel(writer, index=False, sheet_name="Campanas")
-        repository.measurements().to_excel(writer, index=False, sheet_name="Mediciones")
+        repository.measurements(include_deleted=True).to_excel(writer, index=False, sheet_name="Mediciones")
         repository.ztc_results().to_excel(writer, index=False, sheet_name="Resultados ZTC")
         repository.all_points().to_excel(writer, index=False, sheet_name="Puntos V I")
         repository.tracks().to_excel(writer, index=False, sheet_name="Tracks Vt")

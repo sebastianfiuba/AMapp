@@ -152,7 +152,7 @@ def calculate_measurement_hash(device: str, measurement: str, measurement_date: 
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _import_one(metadata: dict[str, str], points: pd.DataFrame, repository: Repository, stats: dict[str, int]) -> None:
+def _import_one(metadata: dict[str, str], points: pd.DataFrame, repository: Repository, stats: dict[str, int], duplicate_mode: str) -> None:
     device = extract_device(metadata.get("dispositivo"), metadata.get("medicion"))
     measurement = _clean(metadata.get("medicion"))
     if not device or not measurement:
@@ -163,7 +163,17 @@ def _import_one(metadata: dict[str, str], points: pd.DataFrame, repository: Repo
     values = {"dispositivo_id": device_id, "campana_id": campaign_id, "archivo": measurement, "fecha": measurement_date,
               "descripcion": _clean(metadata.get("descripcion")), "clase": _clean(metadata.get("clase")), "estado": _clean(metadata.get("estado")),
               "measurement_hash": calculate_measurement_hash(device, measurement, measurement_date, points)}
+    existing = repository.connection.execute(
+        "SELECT m.id FROM mediciones m WHERE (m.dispositivo_id = ? AND m.archivo = ?) OR m.measurement_hash = ?",
+        (device_id, measurement, values["measurement_hash"]),
+    ).fetchone()
+    if existing and duplicate_mode == "conservar":
+        stats["ya_existentes"] += 1
+        stats["duplicados_evitados"] += 1
+        return
     measurement_id, created = repository.add_measurement(values)
+    if existing and duplicate_mode == "reemplazar":
+        repository.connection.execute("DELETE FROM puntos WHERE medicion_id = ?", (measurement_id,))
     added_points = repository.add_points(measurement_id, points)
     stats["mediciones_nuevas"] += int(created)
     stats["ya_existentes"] += int(not created)
@@ -172,7 +182,7 @@ def _import_one(metadata: dict[str, str], points: pd.DataFrame, repository: Repo
     stats["duplicados_evitados"] += int(not created) + max(0, len(points) - added_points)
 
 
-def _import_frames(frames: list[tuple[str, pd.DataFrame]], repository: Repository) -> dict:
+def _import_frames(frames: list[tuple[str, pd.DataFrame]], repository: Repository, duplicate_mode: str = "actualizar") -> dict:
     stats = {"mediciones_nuevas": 0, "mediciones_actualizadas": 0, "ya_existentes": 0, "duplicados_evitados": 0, "puntos_nuevos": 0}
     errors = []
     catalog = _metadata_catalog(frames)
@@ -185,7 +195,7 @@ def _import_frames(frames: list[tuple[str, pd.DataFrame]], repository: Repositor
                 metadata = {**catalog_metadata, **metadata}
                 if metadata.get("campana") == "sin asignar" and catalog_metadata.get("campana"):
                     metadata["campana"] = catalog_metadata["campana"]
-                _import_one(metadata, points, repository, stats)
+                _import_one(metadata, points, repository, stats, duplicate_mode)
         except (TypeError, ValueError) as error:
             errors.append({"Archivo": sheet_name, "Fila": "-", "Problema": str(error)})
     repository.connection.commit()
@@ -245,10 +255,10 @@ def _import_unclassified_frames(frames: list[tuple[str, pd.DataFrame]], source_f
     return imported
 
 
-def import_excel(uploaded_file: BinaryIO, repository: Repository) -> dict:
+def import_excel(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: str = "actualizar") -> dict:
     frames = list(pd.read_excel(uploaded_file, sheet_name=None, header=None).items())
     source_file = getattr(uploaded_file, "name", "archivo.xlsx")
-    summary = _import_frames(frames, repository)
+    summary = _import_frames(frames, repository, duplicate_mode)
     track_summary = _import_track_frames(frames, repository)
     summary["sin_clasificar_nuevos"] = _import_unclassified_frames(frames, source_file, repository)
     summary["tracks_nuevos"] = track_summary["tracks_nuevos"]
@@ -258,7 +268,7 @@ def import_excel(uploaded_file: BinaryIO, repository: Repository) -> dict:
     return summary
 
 
-def import_measurement(uploaded_file: BinaryIO, repository: Repository) -> dict:
+def import_measurement(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: str = "actualizar") -> dict:
     raw = uploaded_file.read()
     name = getattr(uploaded_file, "name", "medicion.ri")
     frame = pd.read_csv(io.BytesIO(raw), sep=r"[,;\t ]+", engine="python", header=None, comment="#")
@@ -266,7 +276,7 @@ def import_measurement(uploaded_file: BinaryIO, repository: Repository) -> dict:
     points = _points_from_frame(frame)
     if points.empty:
         raise ValueError("no se encontraron columnas V/I ni puntos numericos")
-    return _import_frames([(name, frame)], repository)
+    return _import_frames([(name, frame)], repository, duplicate_mode)
 
 
 def detect_input_type(uploaded_file: BinaryIO) -> str:

@@ -84,14 +84,11 @@ def _render_measurement_comparison(repository):
     selected_ids = [measurement_labels[label] for label in selected_labels]
     measurements = measurements[measurements.id.isin(selected_ids)]
     st.caption(f"{len(measurements)} curvas I-V seleccionadas")
-    left, right = st.columns([1.35, 1], gap="large")
-    with left:
-        st.data_editor(measurements[["id", "dispositivo", "campana", "archivo", "fecha", "clase", "estado"]], width="stretch", hide_index=True, disabled=True, key="workbench_measurement_table")
-    with right:
-        points = {int(row.id): repository.points(int(row.id)) for row in measurements.itertuples()}
-        iv_figure = iv_chart(measurements, points)
-        st.plotly_chart(iv_figure, width="stretch")
-        st.download_button("Exportar gráfico I-V (HTML)", iv_figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "comparacion_iv.html", "text/html", key="comparison_iv_export")
+    st.data_editor(measurements[["id", "dispositivo", "campana", "archivo", "fecha", "clase", "estado"]], width="stretch", hide_index=True, disabled=True, key="workbench_measurement_table")
+    points = {int(row.id): repository.points(int(row.id)) for row in measurements.itertuples()}
+    iv_figure = iv_chart(measurements, points)
+    st.plotly_chart(iv_figure, width="stretch")
+    st.download_button("Exportar gráfico I-V (HTML)", iv_figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "comparacion_iv.html", "text/html", key="comparison_iv_export")
     if selected_ids:
         detail_label = st.selectbox("Previsualizar medición", selected_labels, key="workbench_measurement_detail")
         detail_id = measurement_labels[detail_label]
@@ -115,12 +112,9 @@ def _render_measurement_comparison(repository):
         st.subheader("Track Vt de la misma selección")
         track_points = {int(row.id): repository.track_points(int(row.id)) for row in tracks.itertuples()}
         track_figure = track_chart(tracks, track_points)
-        track_left, track_right = st.columns([1.35, 1], gap="large")
-        with track_left:
-                st.data_editor(tracks[["id", "dispositivo", "campana", "medicion", "canal", "fecha"]], width="stretch", hide_index=True, disabled=True, key="workbench_track_table")
-        with track_right:
-            st.plotly_chart(track_figure, width="stretch")
-            st.download_button("Exportar Track Vt (HTML)", track_figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "comparacion_track_vt.html", "text/html", key="comparison_track_export")
+        st.data_editor(tracks[["id", "dispositivo", "campana", "medicion", "canal", "fecha"]], width="stretch", hide_index=True, disabled=True, key="workbench_track_table")
+        st.plotly_chart(track_figure, width="stretch")
+        st.download_button("Exportar Track Vt (HTML)", track_figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "comparacion_track_vt.html", "text/html", key="comparison_track_export")
     save_name = st.text_input("Nombre de la vista", key="workbench_view_name")
     if st.button("Guardar vista", key="save_workbench_view") and save_name.strip():
         repository.save_workbench_view(save_name, {"devices": selected_device_ids, "campaigns": campaign_ids, "filter_text": filter_text, "states": filter_states, "date": filter_date})

@@ -183,7 +183,7 @@ class Repository:
             params = (device_id,)
         return self._query(sql + " ORDER BY d.nombre, c.numero", params)
 
-    def measurements(self, campaign_id: int | None = None) -> pd.DataFrame:
+    def measurements(self, campaign_id: int | None = None, include_deleted: bool = True) -> pd.DataFrame:
         sql = """SELECT m.*, d.nombre AS dispositivo, c.numero AS campana
                   FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
                   JOIN campanas c ON c.id=m.campana_id"""
@@ -191,6 +191,9 @@ class Repository:
         if campaign_id is not None:
             sql += " WHERE m.campana_id = ?"
             params = (campaign_id,)
+        if not include_deleted:
+            sql += " AND " if " WHERE " in sql else " WHERE "
+            sql += "m.eliminado = 0"
         return self._query(sql + " ORDER BY m.id", params)
 
     def iv_measurements(self, campaign_id: int | None = None, include_deleted: bool = False) -> pd.DataFrame:
