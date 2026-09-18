@@ -22,6 +22,8 @@ def _selected_point(selection):
         return None
     point = points[0]
     customdata = point.get("customdata") if isinstance(point, dict) else getattr(point, "customdata", None)
+    if isinstance(customdata, (list, tuple, np.ndarray)):
+        customdata = customdata[0]
     return int(customdata) if customdata is not None else None
 
 
@@ -123,6 +125,10 @@ def _render_campaign(repository, campaign, campaign_id: int):
                 dispersion = None
         if dispersion is not None:
             _render_dispersion_dashboard(repository, measurements, dispersion, f"Campaña {campaign.numero}")
+            candidates = dispersion.attrs.get("crossing_candidates", [])
+            if candidates:
+                st.caption("Se detectaron varios cruces de pendiente; el seleccionado queda marcado por su score estable.")
+                st.dataframe(pd.DataFrame(candidates), hide_index=True, width="stretch")
 
 
 def _render_dispersion_dashboard(repository, measurements, dispersion: pd.DataFrame, title: str):
@@ -214,7 +220,7 @@ def _render_evolution(repository, campaigns, labels):
         all_dispersion = pd.concat(dispersions, ignore_index=True)
         dispersion_figure = go.Figure()
         for (device, campaign), group in all_dispersion.groupby(["dispositivo", "campaña"]):
-            dispersion_figure.add_trace(go.Scatter(x=group.v, y=group.relative_error * 100, mode="lines", name=f"{device} | {campaign}", customdata=group.campaign_id,
+            dispersion_figure.add_trace(go.Scatter(x=group.v, y=group.relative_error * 100, mode="lines+markers", name=f"{device} | {campaign}", customdata=group.campaign_id,
                                                     hovertemplate=f"{device} | {campaign}<br>VT=%{{x}} V<br>Error=%{{y:.3f}}%<extra></extra>"))
         dispersion_figure.update_layout(template="plotly_white", xaxis_title="VT [V]", yaxis_title="Error relativo [%]", legend_title="Dispositivo | Campaña", hovermode="x unified")
         st.subheader("Dispersión de todas las campañas")
@@ -269,7 +275,7 @@ def _render_device_comparison(repository):
     figure = go.Figure()
     for row in frame.itertuples():
         label = f"{row[1]} | {row[2]}"
-        figure.add_trace(go.Scatter(x=[row[3]], y=[row[4]], mode="markers+text", text=[label], customdata=[row[0]], textposition="top center",
+        figure.add_trace(go.Scatter(x=[row[4]], y=[row[5]], mode="markers+text", text=[label], customdata=[row[1]], textposition="top center",
                                     name=label, hovertemplate="%{text}<br>VT=%{x} V<br>I=%{y} A<extra></extra>"))
     figure.update_layout(template="plotly_white", xaxis_title="VT ZTC [V]", yaxis_title="I ZTC [A]", legend_title="Dispositivo | Campaña", hovermode="closest")
     selection = st.plotly_chart(figure, width="stretch", key="ztc_device_comparison", on_select="rerun", selection_mode=("points", "box", "lasso"))
