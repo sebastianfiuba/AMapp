@@ -284,13 +284,10 @@ def _render_device_comparison(repository):
         selected_campaign = campaigns[campaigns.id == selected_campaign_id]
         if not selected_campaign.empty:
             selected_measurements = temperature_measurements(repository.iv_measurements(selected_campaign_id))
-            detail_left, detail_right = st.columns(2)
-            with detail_left:
-                detail_points = {int(row.id): repository.points(int(row.id)) for row in selected_measurements.itertuples()}
-                st.plotly_chart(iv_chart(selected_measurements, detail_points), width="stretch", key="ztc_device_selected_curves")
-            with detail_right:
-                st.subheader(f"Campaña seleccionada: {selected_campaign.iloc[0].dispositivo} | {selected_campaign.iloc[0].numero}")
-                st.dataframe(selected_measurements[["id", "archivo", "fecha", "descripcion", "clase", "estado"]], hide_index=True, width="stretch")
+            st.subheader(f"Campaña seleccionada: {selected_campaign.iloc[0].dispositivo} | {selected_campaign.iloc[0].numero}")
+            st.dataframe(selected_measurements[["id", "archivo", "fecha", "descripcion", "clase", "estado"]], hide_index=True, width="stretch")
+            detail_points = {int(row.id): repository.points(int(row.id)) for row in selected_measurements.itertuples()}
+            st.plotly_chart(iv_chart(selected_measurements, detail_points), width="stretch", key="ztc_device_selected_curves")
     progression = go.Figure()
     for device_name, device_frame in frame.groupby("dispositivo"):
         progression.add_trace(go.Scatter(x=device_frame["campaña original"].astype(str), y=device_frame["I combinado [A]"], mode="lines+markers", name=f"{device_name} | combinado"))

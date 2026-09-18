@@ -16,6 +16,8 @@ streamlit run app.py
 
 El archivo `.xlsx` debe contener una hoja plana con las columnas obligatorias `dispositivo`, `campaña` (o `campana`), `medición` (o `medicion`), `V` e `I`. Cada fila es un punto; las filas con el mismo dispositivo, campaña y medición forman una curva. Se aceptan alias en inglés (`device`, `campaign`, `measurement`, `voltage`, `current`). Son opcionales `fecha`, `descripcion`, `clase` y `estado`.
 
+Las mediciones tienen además el flag `eliminado`. No borra puntos ni metadatos: las excluye de las consultas y cálculos activos, y se puede activar o quitar desde `Importar / Exportar` -> `Visualizar base de datos` -> `Mediciones`. Al guardar un cambio en ese flag, las campañas afectadas recalculan automáticamente su ZTC; si ya no quedan al menos dos temperaturas válidas, se elimina el resultado guardado.
+
 Las filas inválidas se informan sin detener la importación. Las mediciones ya existentes en la misma campaña y archivo se ignoran.
 
 También se aceptan libros con hojas de mediciones exportadas por el instrumento. Las hojas con columnas `V` e `I` se importan como curvas I-V. Las hojas con bloques `t [s]` y `Vt [V]` se importan como Track Vt, separados por dispositivo y canal. Los Track Vt se visualizan y exportan, pero no participan todavía en el análisis ZTC.
@@ -44,6 +46,8 @@ La aplicación usa un objetivo `combinado` como resultado ZTC principal: normali
 Falsos positivos conocidos y corregidos: `sin temp` antes podía tomar el número de campaña como temperatura; `TXX` no representa una temperatura numérica; `temperatura` sola tampoco alcanza. Todos quedan fuera del análisis hasta que se agregue un valor explícito.
 
 El flujo actual es semiautomático: el cálculo genera resultados y métricas comparables, mientras que el usuario puede revisar cada curva, su dispersión y los dos métodos. Esto deja preparada una futura separación entre cálculo manual de detalle, análisis automático exploratorio y validación manual final.
+
+El cálculo combinado ajusta `I(V,T)` por regresión lineal en temperatura para cada tensión común. Para elegir entre varios cruces de `dI/dT = 0`, usa la estabilidad local de la pendiente y el error relativo de las curvas alrededor del cruce, en vez de evaluar únicamente el punto exacto donde la pendiente interpolada vale cero. La corriente se conserva en amperes internamente y solo se convierte a µA al mostrarla. No hay datos de mediciones incluidos en el repositorio, por lo que los casos concretos de 300 µA y 30 µA deben revisarse importando esas curvas y mirando la tabla de candidatos y la dispersión local.
 
 ## Arquitectura y persistencia
 

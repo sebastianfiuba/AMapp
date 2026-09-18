@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS mediciones (
     descripcion TEXT,
     clase TEXT,
     estado TEXT,
+    eliminado INTEGER NOT NULL DEFAULT 0 CHECK(eliminado IN (0, 1)),
     measurement_hash TEXT UNIQUE,
     UNIQUE(campana_id, archivo)
 );

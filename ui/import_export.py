@@ -3,6 +3,7 @@ import pandas as pd
 
 from services.excel_export import export_excel, export_integrity
 from services.excel_import import detect_input_type, import_excel, import_measurement
+from services.measurements import campaign_analysis_methods, temperature_measurements
 from ui.theme import banner
 
 
@@ -62,11 +63,34 @@ def _render_database_view(repository):
         "Sin clasificar": repository.unclassified,
     }
     selected_table = st.selectbox("Tabla", list(tables), key="database_table_view")
-    frame = tables[selected_table]().copy()
+    frame = (repository.measurements(include_deleted=True) if selected_table == "Mediciones" else tables[selected_table]()).copy()
     filter_text = st.text_input("Filtrar registros", key="database_table_filter", placeholder="Texto en cualquier columna")
     if filter_text and not frame.empty:
         searchable = frame.fillna("").astype(str).agg(" ".join, axis=1)
         frame = frame[searchable.str.contains(filter_text, case=False, regex=False)]
     st.caption(f"{len(frame)} registro(s) visibles")
-    st.dataframe(frame, width="stretch", hide_index=True)
+    if selected_table == "Mediciones" and not frame.empty:
+        editable_columns = [column for column in ("fecha", "descripcion", "clase", "estado", "eliminado") if column in frame]
+        edited = st.data_editor(frame, width="stretch", hide_index=True, disabled=[column for column in frame.columns if column not in editable_columns], key="database_measurements_editor")
+        if st.button("Guardar cambios y recalcular ZTC", type="primary", key="save_database_measurements"):
+            changed_campaigns = set()
+            original = frame.set_index("id")
+            for row in edited.itertuples(index=False):
+                values = {column: getattr(row, column) for column in editable_columns}
+                old = original.loc[row.id]
+                if any(values[column] != old[column] for column in editable_columns):
+                    repository.update_measurement_metadata(int(row.id), values)
+                    changed_campaigns.add(int(old.campana_id))
+            for campaign_id in changed_campaigns:
+                active = temperature_measurements(repository.iv_measurements(campaign_id))
+                try:
+                    campaign_analysis_methods(repository, campaign_id, active)
+                except ValueError:
+                    repository.delete_ztc(campaign_id)
+                st.session_state.pop(f"ztc_{campaign_id}", None)
+                st.session_state.pop(f"ztc_dispersion_{campaign_id}", None)
+            repository.connection.commit()
+            st.success(f"Cambios guardados. ZTC recalculado en {len(changed_campaigns)} campaña(s).")
+    else:
+        st.dataframe(frame, width="stretch", hide_index=True)
     st.download_button("Descargar tabla visible CSV", frame.to_csv(index=False).encode("utf-8"), f"{selected_table.lower().replace(' ', '_')}.csv", "text/csv", key="database_table_csv")

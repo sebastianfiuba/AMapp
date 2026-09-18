@@ -148,6 +148,9 @@ class Repository:
             (campaign_id, vt, current),
         )
 
+    def delete_ztc(self, campaign_id: int) -> None:
+        self.connection.execute("DELETE FROM analisis_ztc WHERE campana_id = ?", (campaign_id,))
+
     def link_campaigns(self, previous_id: int, next_id: int, order: int | None = 1, reason: str = "") -> None:
         self.connection.execute(
             """INSERT INTO relaciones_campana(anterior_id, siguiente_id, orden, motivo)
@@ -190,12 +193,14 @@ class Repository:
             params = (campaign_id,)
         return self._query(sql + " ORDER BY m.id", params)
 
-    def iv_measurements(self, campaign_id: int | None = None) -> pd.DataFrame:
+    def iv_measurements(self, campaign_id: int | None = None, include_deleted: bool = False) -> pd.DataFrame:
         sql = """SELECT m.*, d.nombre AS dispositivo, c.numero AS campana
                   FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
                   JOIN campanas c ON c.id=m.campana_id
                   WHERE EXISTS (SELECT 1 FROM puntos p WHERE p.medicion_id=m.id)"""
         params: tuple = ()
+        if not include_deleted:
+            sql += " AND m.eliminado = 0"
         if campaign_id is not None:
             sql += " AND m.campana_id = ?"
             params = (campaign_id,)
@@ -209,7 +214,7 @@ class Repository:
             f"""SELECT m.*, d.nombre AS dispositivo, c.numero AS campana
                 FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
                 JOIN campanas c ON c.id=m.campana_id
-                WHERE m.dispositivo_id IN ({placeholders}) ORDER BY d.nombre, c.numero, m.archivo""",
+                WHERE m.dispositivo_id IN ({placeholders}) AND m.eliminado = 0 ORDER BY d.nombre, c.numero, m.archivo""",
             tuple(device_ids),
         )
 
@@ -221,7 +226,7 @@ class Repository:
             f"""SELECT m.*, d.nombre AS dispositivo, c.numero AS campana
                 FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
                 JOIN campanas c ON c.id=m.campana_id
-                WHERE m.campana_id IN ({placeholders}) ORDER BY d.nombre, c.numero, m.archivo""",
+                WHERE m.campana_id IN ({placeholders}) AND m.eliminado = 0 ORDER BY d.nombre, c.numero, m.archivo""",
             tuple(campaign_ids),
         )
 
@@ -261,13 +266,20 @@ class Repository:
             ORDER BY p.id""")
 
     def update_measurement_metadata(self, measurement_id: int, values: dict[str, Any]) -> None:
-        allowed = {"dispositivo_id", "campana_id", "archivo", "fecha", "descripcion", "clase", "estado"}
+        allowed = {"dispositivo_id", "campana_id", "archivo", "fecha", "descripcion", "clase", "estado", "eliminado"}
         updates = {key: value for key, value in values.items() if key in allowed}
         if not updates:
             return
         assignments = ", ".join(f"{key} = :{key}" for key in updates)
         updates["id"] = measurement_id
         self.connection.execute(f"UPDATE mediciones SET {assignments} WHERE id = :id", updates)
+
+    def set_measurement_deleted(self, measurement_id: int, deleted: bool) -> int | None:
+        row = self.connection.execute("SELECT campana_id FROM mediciones WHERE id = ?", (measurement_id,)).fetchone()
+        if row is None:
+            return None
+        self.connection.execute("UPDATE mediciones SET eliminado = ? WHERE id = ?", (int(deleted), measurement_id))
+        return int(row["campana_id"])
 
     def save_workbench_view(self, name: str, configuration: dict[str, Any]) -> None:
         self.connection.execute(

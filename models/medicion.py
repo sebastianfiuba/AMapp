@@ -11,3 +11,4 @@ class Medicion:
     descripcion: str = ""
     clase: str = "normal"
     estado: str = "nada"
+    eliminado: bool = False

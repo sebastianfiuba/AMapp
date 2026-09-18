@@ -67,17 +67,20 @@ def analyze_curves(curves: list[pd.DataFrame], temperatures: list[float] | None 
             for order, crossing in enumerate(crossings, start=1):
                 left = max(0, crossing - 3)
                 right = min(len(samples), crossing + 4)
-                local_v = samples[left:right]
                 local_slope = slope[left:right]
                 refined_v = float(np.interp(0.0, [slope[crossing], slope[crossing + 1]], [samples[crossing], samples[crossing + 1]]))
                 transition = abs(float(slope[crossing + 1] - slope[crossing])) / slope_scale
-                local_score = float(np.interp(refined_v, samples, combined_score))
+                local_relative_error = relative_error[left:right]
+                slope_stability = float(np.mean(np.abs(local_slope)) / slope_scale)
+                relative_stability = float(np.mean(local_relative_error) / relative_scale)
+                local_score = 0.8 * slope_stability + 0.2 * relative_stability
                 stable_score = local_score / max(1.0 + transition, 1e-12)
                 candidate_current = float(np.mean([np.interp(refined_v, values, current) for values, current in prepared]))
                 crossing_candidates.append({"orden": order, "vt": refined_v, "i": candidate_current, "score": local_score,
                                             "stable_score": stable_score, "transition": transition,
                                             "slope": float(np.interp(refined_v, samples, slope)),
-                                            "relative_error": float(np.interp(refined_v, samples, relative_error))})
+                                            "relative_error": float(np.interp(refined_v, samples, relative_error)),
+                                            "slope_stability": slope_stability, "relative_stability": relative_stability})
             selected = min(crossing_candidates, key=lambda candidate: (candidate["stable_score"], candidate["orden"]))
             vt = float(selected["vt"])
     else:
