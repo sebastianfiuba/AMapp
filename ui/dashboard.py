@@ -1,6 +1,7 @@
 import plotly.express as px
 import streamlit as st
 
+from ui.charts import style_figure
 from ui.theme import banner
 
 def render(repository):
@@ -19,7 +20,7 @@ def render(repository):
     if not measurements.empty:
         summary = measurements.groupby("dispositivo", as_index=False).size().rename(columns={"size": "mediciones"})
         figure = px.bar(summary, x="dispositivo", y="mediciones", title="Curvas I-V por dispositivo", color_discrete_sequence=["#0c7285"])
-        figure.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        style_figure(figure, height=500)
         st.plotly_chart(figure, width="stretch")
     else:
         st.info("Importa un Excel para comenzar a explorar mediciones.")

@@ -1,6 +1,7 @@
 import streamlit as st
 
 from ui.charts import chart_downloads, iv_chart
+from ui.measurement_editor import render_measurement_editor
 from ui.track_vt import render_panel as render_track_panel
 from ui.theme import banner
 
@@ -18,15 +19,17 @@ def render_iv_panel(repository):
     campaign_options = {f"{row.dispositivo} | {row.numero}": int(row.id) for row in campaigns.itertuples()}
     selected_campaigns = st.multiselect("Campañas", list(campaign_options), default=list(campaign_options)[:1], key="measurements_campaigns")
     campaign_ids = [campaign_options[label] for label in selected_campaigns]
-    measurements = repository.iv_measurements()
+    measurements = repository.iv_measurements(include_deleted=True)
     measurements = measurements[measurements.dispositivo_id.isin(device_ids) & measurements.campana_id.isin(campaign_ids)]
     if measurements.empty:
         st.info("Selecciona un dispositivo y una campaña con datos I-V.")
         return
+    render_measurement_editor(repository, measurements, "measurements_iv")
     measurement_options = {f"{row.dispositivo} | {row.campana} | {row.archivo}": int(row.id) for row in measurements.itertuples()}
-    selected_measurements = st.multiselect("Mediciones para la vista previa", list(measurement_options), default=list(measurement_options)[:3], key="measurements_preview")
+    active_labels = [label for label, measurement_id in measurement_options.items() if bool(measurements.loc[measurements.id == measurement_id, "activa"].iloc[0])]
+    selected_measurements = st.multiselect("Mediciones activas para la vista previa", list(measurement_options), default=active_labels[:3], key="measurements_preview")
     selected_ids = {measurement_options[label] for label in selected_measurements}
-    preview = measurements[measurements.id.isin(selected_ids)]
+    preview = measurements[measurements.id.isin(selected_ids) & measurements.activa.astype(bool)]
     if preview.empty:
         st.info("Selecciona al menos una medición para previsualizar.")
         return

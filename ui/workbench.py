@@ -7,7 +7,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from services.measurements import extract_temperature, temperature_measurements
-from ui.charts import campaign_context, chart_downloads, iv_chart, track_chart
+from ui.charts import CURVE_COLORS, campaign_context, chart_downloads, iv_chart, style_figure, track_chart
+from ui.measurement_editor import recalculate_campaigns, render_measurement_editor
 from ui.theme import banner
 from ui.ztc import render_panel as render_ztc_panel
 
@@ -51,7 +52,7 @@ def _render_measurement_comparison(repository):
     default_campaigns = [label for label, value in campaign_options.items() if value in loaded.get("campaigns", [])]
     selected_campaigns = st.multiselect("Campañas", list(campaign_options), default=default_campaigns, key="workbench_campaigns")
     campaign_ids = [campaign_options[label] for label in selected_campaigns]
-    measurements = repository.iv_measurements()
+    measurements = repository.iv_measurements(include_deleted=True)
     measurements = measurements[measurements.dispositivo_id.isin(selected_device_ids)]
     if campaign_ids:
         measurements = measurements[measurements.campana_id.isin(campaign_ids)]
@@ -80,19 +81,21 @@ def _render_measurement_comparison(repository):
         st.info("Selecciona al menos un dispositivo o campaña con mediciones.")
         return
     measurement_labels = {f"{row.dispositivo} | {row.campana} | {row.archivo} (id {row.id})": int(row.id) for row in measurements.itertuples()}
-    selected_labels = st.multiselect("Mediciones seleccionadas", list(measurement_labels), default=list(measurement_labels), key="workbench_measurements")
+    active_labels = [label for label, measurement_id in measurement_labels.items() if bool(measurements.loc[measurements.id == measurement_id, "activa"].iloc[0])]
+    selected_labels = st.multiselect("Mediciones seleccionadas", list(measurement_labels), default=active_labels, key="workbench_measurements")
     selected_ids = [measurement_labels[label] for label in selected_labels]
-    measurements = measurements[measurements.id.isin(selected_ids)]
-    st.caption(f"{len(measurements)} curvas I-V seleccionadas")
-    st.data_editor(measurements[["id", "dispositivo", "campana", "archivo", "fecha", "clase", "estado"]], width="stretch", hide_index=True, disabled=True, key="workbench_measurement_table")
-    points = {int(row.id): repository.points(int(row.id)) for row in measurements.itertuples()}
-    iv_figure = iv_chart(measurements, points)
+    selected_measurements = measurements[measurements.id.isin(selected_ids)]
+    active_selected = selected_measurements[selected_measurements.activa.astype(bool)]
+    st.caption(f"{len(active_selected)} curvas I-V activas seleccionadas")
+    render_measurement_editor(repository, selected_measurements, "workbench_measurements")
+    points = {int(row.id): repository.points(int(row.id)) for row in active_selected.itertuples()}
+    iv_figure = iv_chart(active_selected, points)
     st.plotly_chart(iv_figure, width="stretch")
     st.download_button("Exportar gráfico I-V (HTML)", iv_figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "comparacion_iv.html", "text/html", key="comparison_iv_export")
     if selected_ids:
         detail_label = st.selectbox("Previsualizar medición", selected_labels, key="workbench_measurement_detail")
         detail_id = measurement_labels[detail_label]
-        detail_row = measurements[measurements.id == detail_id]
+        detail_row = selected_measurements[selected_measurements.id == detail_id]
         if not detail_row.empty:
             st.dataframe(detail_row[["id", "dispositivo", "campana", "archivo", "fecha", "descripcion", "clase", "estado"]], hide_index=True, width="stretch")
             _measurement_details(repository, detail_id)
@@ -168,7 +171,8 @@ def _render_thermal_device_comparison(repository):
             label = f"{campaign.dispositivo} | {campaign.numero} | {context} | {measurement.archivo} | {temperature:g} °C" if temperature is not None else f"{campaign.dispositivo} | {campaign.numero} | {context} | {measurement.archivo}"
             figure.add_trace(go.Scatter(x=points.v, y=points.i, mode="lines", name=label))
         rows.append({"dispositivo": campaign.dispositivo, "campaña": campaign.numero, "barridos térmicos": len(thermal)})
-    figure.update_layout(template="plotly_white", xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified", legend_title="Dispositivo | Campaña | Medición | Temperatura")
+    style_figure(figure)
+    figure.update_layout(xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified", legend_title="Dispositivo | Campaña | Medición | Temperatura")
     st.plotly_chart(figure, width="stretch")
     st.download_button("Exportar comparación térmica (HTML)", figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "comparacion_barridos_termicos.html", "text/html", key="thermal_comparison_export")
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
@@ -191,12 +195,12 @@ def _render_device(repository):
     device_options = {row.nombre: int(row.id) for row in devices.itertuples()}
     selected = st.selectbox("Dispositivo", list(device_options))
     device_id = device_options[selected]
-    measurements = repository.measurements_for_devices([device_id])
+    measurements = repository.measurements_for_devices([device_id], include_deleted=True)
     tracks = repository.tracks(device_id=device_id)
     st.metric("Mediciones I-V", len(measurements))
     st.metric("Tracks Vt", len(tracks))
     if not measurements.empty:
-        st.dataframe(measurements[["campana", "archivo", "fecha", "descripcion", "clase", "estado"]], width="stretch", hide_index=True)
+        render_measurement_editor(repository, measurements, "workbench_device_measurements")
     if not tracks.empty:
         st.dataframe(tracks[["id", "campana", "archivo", "canal", "fecha", "source_sheet"]], width="stretch", hide_index=True)
         selected_track = st.selectbox("Medición Track Vt", tracks.apply(_label, axis=1).tolist())
@@ -228,7 +232,7 @@ def _render_device(repository):
 
 def _render_matching(repository):
     st.subheader("Matching y agrupación")
-    measurements = repository.iv_measurements()
+    measurements = repository.iv_measurements(include_deleted=True)
     if measurements.empty:
         st.info("No hay mediciones I-V para asociar.")
         return
@@ -236,17 +240,21 @@ def _render_matching(repository):
     measurements = measurements.copy()
     measurements["clave"] = measurements.apply(lambda row: re.sub(r"\.ri$", "", str(row.archivo), flags=re.IGNORECASE).lower(), axis=1)
     measurements["campana_destino"] = measurements["campana"]
-    edited = st.data_editor(measurements[["id", "dispositivo", "campana", "archivo", "fecha", "clave", "campana_destino"]], width="stretch", hide_index=True, disabled=["id", "dispositivo", "campana", "archivo", "fecha", "clave"])
+    edited = st.data_editor(measurements[["id", "dispositivo", "campana", "archivo", "fecha", "clave", "activa", "campana_destino"]], width="stretch", hide_index=True, disabled=["id", "dispositivo", "campana", "archivo", "fecha", "clave"], column_config={"activa": st.column_config.CheckboxColumn("Activa", help="Desmarcar excluye esta medición de gráficos y cálculos.")})
     if st.button("Guardar matching masivo", type="primary"):
         errors = []
+        changed_campaigns = set()
         for row in edited.itertuples():
-            campaigns = repository.campaigns(int(measurements.loc[measurements.id == row.id, "dispositivo_id"].iloc[0]))
+            original = measurements.loc[measurements.id == row.id].iloc[0]
+            campaigns = repository.campaigns(int(original.dispositivo_id))
             match = campaigns[campaigns.numero.astype(str) == str(row.campana_destino).strip()]
             if match.empty:
                 errors.append(f"{row.archivo}: campaña no encontrada: {row.campana_destino}")
             else:
-                repository.update_measurement_metadata(int(row.id), {"campana_id": int(match.iloc[0].id)})
+                repository.update_measurement_metadata(int(row.id), {"campana_id": int(match.iloc[0].id), "activa": bool(row.activa)})
+                changed_campaigns.update({int(original.campana_id), int(match.iloc[0].id)})
         repository.connection.commit()
+        recalculate_campaigns(repository, changed_campaigns)
         if errors:
             st.warning("Algunas asociaciones no se guardaron.")
             st.dataframe(pd.DataFrame({"error": errors}), hide_index=True)

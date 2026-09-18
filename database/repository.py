@@ -184,7 +184,7 @@ class Repository:
         return self._query(sql + " ORDER BY d.nombre, c.numero", params)
 
     def measurements(self, campaign_id: int | None = None, include_deleted: bool = True) -> pd.DataFrame:
-        sql = """SELECT m.*, d.nombre AS dispositivo, c.numero AS campana
+        sql = """SELECT m.*, (1 - m.eliminado) AS activa, d.nombre AS dispositivo, c.numero AS campana
                   FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
                   JOIN campanas c ON c.id=m.campana_id"""
         params: tuple = ()
@@ -197,7 +197,7 @@ class Repository:
         return self._query(sql + " ORDER BY m.id", params)
 
     def iv_measurements(self, campaign_id: int | None = None, include_deleted: bool = False) -> pd.DataFrame:
-        sql = """SELECT m.*, d.nombre AS dispositivo, c.numero AS campana
+        sql = """SELECT m.*, (1 - m.eliminado) AS activa, d.nombre AS dispositivo, c.numero AS campana
                   FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
                   JOIN campanas c ON c.id=m.campana_id
                   WHERE EXISTS (SELECT 1 FROM puntos p WHERE p.medicion_id=m.id)"""
@@ -209,15 +209,15 @@ class Repository:
             params = (campaign_id,)
         return self._query(sql + " ORDER BY d.nombre, c.numero, m.archivo", params)
 
-    def measurements_for_devices(self, device_ids: list[int]) -> pd.DataFrame:
+    def measurements_for_devices(self, device_ids: list[int], include_deleted: bool = False) -> pd.DataFrame:
         if not device_ids:
             return pd.DataFrame()
         placeholders = ",".join("?" for _ in device_ids)
         return self._query(
-            f"""SELECT m.*, d.nombre AS dispositivo, c.numero AS campana
+            f"""SELECT m.*, (1 - m.eliminado) AS activa, d.nombre AS dispositivo, c.numero AS campana
                 FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
                 JOIN campanas c ON c.id=m.campana_id
-                WHERE m.dispositivo_id IN ({placeholders}) AND m.eliminado = 0 ORDER BY d.nombre, c.numero, m.archivo""",
+                WHERE m.dispositivo_id IN ({placeholders}) {'' if include_deleted else 'AND m.eliminado = 0'} ORDER BY d.nombre, c.numero, m.archivo""",
             tuple(device_ids),
         )
 
@@ -226,10 +226,10 @@ class Repository:
             return pd.DataFrame()
         placeholders = ",".join("?" for _ in campaign_ids)
         return self._query(
-            f"""SELECT m.*, d.nombre AS dispositivo, c.numero AS campana
+            f"""SELECT m.*, (1 - m.eliminado) AS activa, d.nombre AS dispositivo, c.numero AS campana
                 FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
                 JOIN campanas c ON c.id=m.campana_id
-                WHERE m.campana_id IN ({placeholders}) AND m.eliminado = 0 ORDER BY d.nombre, c.numero, m.archivo""",
+                WHERE m.campana_id IN ({placeholders}) {'' if include_deleted else 'AND m.eliminado = 0'} ORDER BY d.nombre, c.numero, m.archivo""",
             tuple(campaign_ids),
         )
 
@@ -269,6 +269,9 @@ class Repository:
             ORDER BY p.id""")
 
     def update_measurement_metadata(self, measurement_id: int, values: dict[str, Any]) -> None:
+        values = dict(values)
+        if "activa" in values:
+            values["eliminado"] = int(not bool(values.pop("activa")))
         allowed = {"dispositivo_id", "campana_id", "archivo", "fecha", "descripcion", "clase", "estado", "eliminado"}
         updates = {key: value for key, value in values.items() if key in allowed}
         if not updates:
