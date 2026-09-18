@@ -41,19 +41,32 @@ def analyze_curves(curves: list[pd.DataFrame], temperatures: list[float] | None 
     if temperatures is None:
         vt = float(samples[int(np.argmin(spread))])
         method = "dispersion"
-    elif method == "error relativo":
-        vt = float(samples[int(np.argmin(relative_error))])
     else:
         temperature_values = np.asarray(temperatures, dtype=float)
         centered_temperature = temperature_values - temperature_values.mean()
         denominator = float(np.dot(centered_temperature, centered_temperature))
         slope = centered_temperature @ currents / denominator
-        crossings = np.flatnonzero(slope[:-1] * slope[1:] <= 0)
-        if len(crossings):
-            crossing = crossings[int(np.argmin(np.abs(slope[crossings])))]
-            vt = float(np.interp(0.0, [slope[crossing], slope[crossing + 1]], [samples[crossing], samples[crossing + 1]]))
+        if method == "error relativo":
+            vt = float(samples[int(np.argmin(relative_error))])
+        elif method == "combinado":
+            slope_scale = max(float(np.nanpercentile(np.abs(slope), 75)), 1e-15)
+            relative_scale = max(float(np.nanpercentile(relative_error, 75)), 1e-15)
+            combined_score = np.sqrt((np.abs(slope) / slope_scale) ** 2 + (relative_error / relative_scale) ** 2)
+            vt = float(samples[int(np.argmin(combined_score))])
         else:
-            vt = float(samples[int(np.argmin(np.abs(slope)))])
+            crossings = np.flatnonzero(slope[:-1] * slope[1:] <= 0)
+            if len(crossings):
+                crossing = crossings[int(np.argmin(np.abs(slope[crossings])))]
+                vt = float(np.interp(0.0, [slope[crossing], slope[crossing + 1]], [samples[crossing], samples[crossing + 1]]))
+            else:
+                vt = float(samples[int(np.argmin(np.abs(slope)))])
+    if temperatures is not None:
+        slope_scale = max(float(np.nanpercentile(np.abs(slope), 75)), 1e-15)
+        relative_scale = max(float(np.nanpercentile(relative_error, 75)), 1e-15)
+        combined_score = np.sqrt((np.abs(slope) / slope_scale) ** 2 + (relative_error / relative_scale) ** 2)
+    else:
+        combined_score = np.zeros(len(samples))
     iztc = float(np.mean([np.interp(vt, values, current) for values, current in prepared]))
     error_at_vt = float(np.interp(vt, samples, relative_error))
-    return ResultadoZTC(vt, iztc, len(curves), method, error_at_vt), pd.DataFrame({"v": samples, "dispersion": spread, "d_i_d_t": slope, "relative_error": relative_error})
+    combined_at_vt = float(np.interp(vt, samples, combined_score))
+    return ResultadoZTC(vt, iztc, len(curves), method, error_at_vt), pd.DataFrame({"v": samples, "dispersion": spread, "d_i_d_t": slope, "relative_error": relative_error, "combined_score": combined_score, "combined_score_at_vt": combined_at_vt})
