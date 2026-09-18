@@ -33,12 +33,13 @@ La navegación separa `I-V`, `Track Vt` y `Análisis ZTC`. El menú `Workbench` 
 
 `Análisis ZTC` trabaja únicamente con barridos que tienen una temperatura numérica identificable en el nombre o metadatos. Acepta formatos como `T20`, `temp 20`, `20 °C` y `36 grados`; excluye `sin temp`, `TXX`, `temperatura` sin número y nombres sin temperatura.
 
-Para cada campaña se calculan y muestran simultáneamente dos estimaciones:
+Para cada campaña se calcula y muestra un único resultado combinado:
 
-- `dI/dT`: interpola linealmente las curvas en el intervalo de tensión común, ajusta la corriente contra la temperatura para cada `VT` y busca el cruce donde la pendiente térmica se anula.
-- `error relativo`: busca el `VT` que minimiza la dispersión porcentual de corriente entre temperaturas, usando `max(I)-min(I)` dividido por la corriente media absoluta.
+- El componente de pendiente `dI/dT` interpola linealmente las curvas en el intervalo de tensión común y ajusta la corriente contra la temperatura para cada `VT`.
+- El componente de error relativo usa `max(I)-min(I)` dividido por la corriente media absoluta.
+- El score combinado da prioridad a cruces reales de pendiente y usa el error relativo como desempate/localización secundaria. La corriente de 50–300 µA no se impone como filtro del análisis; solo puede usarse para evaluar variantes automáticas durante pruebas.
 
-La aplicación usa un objetivo `combinado` como resultado ZTC principal: normaliza `|dI/dT|` y el error relativo con escalas robustas y minimiza simultáneamente ambos términos. Los resultados independientes de `dI/dT` y error relativo se conservan como controles de sensibilidad. La vista de Evolución permite elegir un único dispositivo, guardar el conjunto de campañas, ver la progresión de `I ZTC` de los tres resultados y consultar la dispersión de todas las campañas seleccionadas en un dashboard de dos columnas. La comparación automática entre dispositivos vive dentro de `Análisis ZTC` y entrega una tabla y gráficos para revisión manual.
+La aplicación usa un objetivo `combinado` como resultado ZTC principal: normaliza `|dI/dT|` y el error relativo con escalas robustas, prioriza candidatos donde la pendiente cambia de signo y minimiza ambos términos. La vista de Evolución permite elegir un único dispositivo, guardar el conjunto de campañas, ver la progresión de `I ZTC` y consultar la dispersión de todas las campañas seleccionadas en un dashboard de dos columnas. La comparación automática entre dispositivos vive dentro de `Análisis ZTC` y entrega una tabla y gráficos seleccionables para revisión manual.
 
 Falsos positivos conocidos y corregidos: `sin temp` antes podía tomar el número de campaña como temperatura; `TXX` no representa una temperatura numérica; `temperatura` sola tampoco alcanza. Todos quedan fuera del análisis hasta que se agregue un valor explícito.
 

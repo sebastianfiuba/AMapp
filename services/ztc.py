@@ -48,11 +48,6 @@ def analyze_curves(curves: list[pd.DataFrame], temperatures: list[float] | None 
         slope = centered_temperature @ currents / denominator
         if method == "error relativo":
             vt = float(samples[int(np.argmin(relative_error))])
-        elif method == "combinado":
-            slope_scale = max(float(np.nanpercentile(np.abs(slope), 75)), 1e-15)
-            relative_scale = max(float(np.nanpercentile(relative_error, 75)), 1e-15)
-            combined_score = np.sqrt((np.abs(slope) / slope_scale) ** 2 + (relative_error / relative_scale) ** 2)
-            vt = float(samples[int(np.argmin(combined_score))])
         else:
             crossings = np.flatnonzero(slope[:-1] * slope[1:] <= 0)
             if len(crossings):
@@ -63,10 +58,18 @@ def analyze_curves(curves: list[pd.DataFrame], temperatures: list[float] | None 
     if temperatures is not None:
         slope_scale = max(float(np.nanpercentile(np.abs(slope), 75)), 1e-15)
         relative_scale = max(float(np.nanpercentile(relative_error, 75)), 1e-15)
-        combined_score = np.sqrt((np.abs(slope) / slope_scale) ** 2 + (relative_error / relative_scale) ** 2)
+        slope_component = np.abs(slope) / slope_scale
+        relative_component = relative_error / relative_scale
+        combined_score = 0.8 * slope_component + 0.2 * relative_component
+        crossings = np.flatnonzero(slope[:-1] * slope[1:] <= 0)
+        if method == "combinado" and len(crossings):
+            candidate_indices = np.unique(np.clip(np.concatenate([crossings, crossings + 1]), 0, len(samples) - 1))
+            vt = float(samples[candidate_indices[np.argmin(combined_score[candidate_indices])]])
     else:
+        slope_component = np.zeros(len(samples))
+        relative_component = np.zeros(len(samples))
         combined_score = np.zeros(len(samples))
     iztc = float(np.mean([np.interp(vt, values, current) for values, current in prepared]))
     error_at_vt = float(np.interp(vt, samples, relative_error))
     combined_at_vt = float(np.interp(vt, samples, combined_score))
-    return ResultadoZTC(vt, iztc, len(curves), method, error_at_vt), pd.DataFrame({"v": samples, "dispersion": spread, "d_i_d_t": slope, "relative_error": relative_error, "combined_score": combined_score, "combined_score_at_vt": combined_at_vt})
+    return ResultadoZTC(vt, iztc, len(curves), method, error_at_vt), pd.DataFrame({"v": samples, "dispersion": spread, "d_i_d_t": slope, "relative_error": relative_error, "slope_component": slope_component, "relative_component": relative_component, "combined_score": combined_score, "combined_score_at_vt": combined_at_vt})

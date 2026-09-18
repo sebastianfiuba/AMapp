@@ -55,8 +55,6 @@ def campaign_analysis_methods(repository: Repository, campaign_id: int, measurem
         raise ValueError("se necesitan al menos dos temperaturas distintas para calcular ZTC")
     curves = [repository.points(int(row.id)) for row in rows]
     combined, combined_dispersion = analyze_curves(curves, temperatures, "combinado")
-    physical, physical_dispersion = analyze_curves(curves, temperatures, "dI/dT")
-    relative, relative_dispersion = analyze_curves(curves, temperatures, "error relativo")
     repository.save_ztc(campaign_id, combined.vt_ztc, combined.i_ztc)
     result = {
         "vt_ztc": combined.vt_ztc,
@@ -66,15 +64,11 @@ def campaign_analysis_methods(repository: Repository, campaign_id: int, measurem
         "error_relativo": combined.error_relativo,
         "combined_score": combined_dispersion["combined_score_at_vt"].iloc[0],
         "combined": {"vt_ztc": combined.vt_ztc, "i_ztc": combined.i_ztc, "error_relativo": combined.error_relativo},
-        "didt": {"vt_ztc": physical.vt_ztc, "i_ztc": physical.i_ztc, "error_relativo": physical.error_relativo},
-        "relative": {"vt_ztc": relative.vt_ztc, "i_ztc": relative.i_ztc, "error_relativo": relative.error_relativo},
     }
     dispersion = combined_dispersion.copy()
-    dispersion["relative_method_vt"] = relative.vt_ztc
-    dispersion["relative_method_i"] = relative.i_ztc
     dispersion["campaign_id"] = campaign_id
     dispersion["temperatures"] = ", ".join(str(value) for value in sorted(temperatures))
-    dispersion.attrs["methods"] = {"combinado": result["combined"], "dI/dT": result["didt"], "error relativo": result["relative"]}
+    dispersion.attrs["methods"] = {"combinado": result["combined"]}
     return result, dispersion
 
 
