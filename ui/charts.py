@@ -10,9 +10,9 @@ def style_figure(figure, height: int = 560, right_margin: int = 30):
         height=height,
         margin={"l": 70, "r": right_margin, "t": 55, "b": 70},
         template="plotly_white",
-        paper_bgcolor="#e8f2f3",
-        plot_bgcolor="#f1f6f5",
-        font={"family": "Source Sans 3, sans-serif", "color": "#17212b"},
+        paper_bgcolor="#000000",
+        plot_bgcolor="#111111",
+        font={"family": "Source Sans 3, sans-serif", "color": "#ffffff"},
     )
     return figure
 
@@ -39,8 +39,8 @@ def iv_chart(measurements, points_by_measurement, ztc=None):
         figure.add_trace(go.Scatter(x=[ztc[0]], y=[ztc[1]], mode="markers", name="ZTC", marker={"size": 13, "symbol": "star", "color": ZTC_COLOR}))
     style_figure(figure)
     figure.update_layout(xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified", legend_title="Medición")
-    figure.update_xaxes(showgrid=True, zeroline=True)
-    figure.update_yaxes(showgrid=True, zeroline=True)
+    figure.update_xaxes(showgrid=True, gridcolor="#3d4b50", zeroline=True, zerolinecolor="#ffffff", tickfont={"color": "#ffffff"}, title_font={"color": "#ffffff"})
+    figure.update_yaxes(showgrid=True, gridcolor="#3d4b50", zeroline=True, zerolinecolor="#ffffff", tickfont={"color": "#ffffff"}, title_font={"color": "#ffffff"})
     return figure
 
 
@@ -51,8 +51,8 @@ def track_chart(tracks, points_by_track):
         figure.add_trace(go.Scatter(x=points.t, y=points.vt, mode="lines", name=f"{row.dispositivo} | {row.canal} | {row.archivo}"))
     style_figure(figure)
     figure.update_layout(xaxis_title="Tiempo [s]", yaxis_title="Vt [V]", hovermode="x unified", legend_title="Track Vt")
-    figure.update_xaxes(showgrid=True, zeroline=True)
-    figure.update_yaxes(showgrid=True, zeroline=True)
+    figure.update_xaxes(showgrid=True, gridcolor="#3d4b50", zeroline=True, zerolinecolor="#ffffff", tickfont={"color": "#ffffff"}, title_font={"color": "#ffffff"})
+    figure.update_yaxes(showgrid=True, gridcolor="#3d4b50", zeroline=True, zerolinecolor="#ffffff", tickfont={"color": "#ffffff"}, title_font={"color": "#ffffff"})
     return figure
 
 

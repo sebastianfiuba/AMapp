@@ -14,7 +14,7 @@ def render(repository):
     labels = [f"{row.dispositivo} | {row.numero}" for row in campaigns.itertuples()]
     selected = st.multiselect("Campañas a comparar", labels, default=labels[:1])
     ids = [int(campaigns.iloc[labels.index(label)].id) for label in selected]
-    measurements = repository.measurements_for_campaigns(ids)
+    measurements = repository.measurements_for_campaigns(ids, include_deleted=True)
     if measurements.empty:
         st.info("Las campañas seleccionadas no tienen curvas I-V.")
         return

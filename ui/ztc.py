@@ -189,6 +189,27 @@ def _render_evolution(repository, campaigns, labels):
     if not selected_ids:
         st.info("Selecciona campañas para calcular su evolución.")
         return
+    edit_campaign_options = {
+        campaign_label(campaigns[campaigns.id == campaign_id].iloc[0]): campaign_id
+        for campaign_id in selected_ids
+    }
+    edit_campaign_label = st.selectbox("Campaña para editar mediciones", list(edit_campaign_options), key="ztc_evolution_edit_campaign")
+    edit_campaign_id = edit_campaign_options[edit_campaign_label]
+    edit_frame = temperature_measurements(repository.iv_measurements(edit_campaign_id, include_deleted=True))
+    render_measurement_editor(repository, edit_frame, f"ztc_evolution_editor_{edit_campaign_id}")
+    measurement_catalog = []
+    for campaign_id in selected_ids:
+        thermal = temperature_measurements(repository.iv_measurements(campaign_id, include_deleted=True))
+        for measurement in thermal.itertuples():
+            active_marker = "activa" if bool(measurement.activa) else "inactiva"
+            measurement_catalog.append((f"{measurement.dispositivo} | {measurement.campana} | {measurement.archivo} | {active_marker} (id {measurement.id})", int(measurement.id), bool(measurement.activa)))
+    if measurement_catalog:
+        measurement_labels = [item[0] for item in measurement_catalog]
+        default_measurements = [item[0] for item in measurement_catalog if item[2]]
+        selected_measurements = st.multiselect("Mediciones para las curvas de evolución", measurement_labels, default=default_measurements, key="ztc_evolution_measurements")
+        selected_measurement_ids = {item[1] for item in measurement_catalog if item[0] in selected_measurements and item[2]}
+    else:
+        selected_measurement_ids = set()
     rows = []
     dispersions = []
     for campaign_id in selected_ids:
@@ -210,6 +231,7 @@ def _render_evolution(repository, campaigns, labels):
     colors = CURVE_COLORS
     for index, row in frame.iterrows():
         measurements = temperature_measurements(repository.iv_measurements(int(row["campana_id"])))
+        measurements = measurements[measurements.id.isin(selected_measurement_ids)]
         for measurement in measurements.itertuples():
             points = repository.points(int(measurement.id))
             figure.add_trace(go.Scatter(x=points.v, y=points.i, mode="lines", line={"color": colors[index % len(colors)]},
@@ -300,7 +322,12 @@ def _render_device_comparison(repository):
             render_measurement_editor(repository, selected_measurements, f"ztc_automatic_{selected_campaign_id}")
             selected_measurements = selected_measurements[selected_measurements.activa.astype(bool)]
             detail_points = {int(row.id): repository.points(int(row.id)) for row in selected_measurements.itertuples()}
-            st.plotly_chart(iv_chart(selected_measurements, detail_points), width="stretch", key="ztc_device_selected_curves")
+            try:
+                selected_result, _ = campaign_analysis_methods(repository, selected_campaign_id, selected_measurements)
+                selected_ztc = (selected_result["combined"]["vt_ztc"], selected_result["combined"]["i_ztc"])
+            except ValueError:
+                selected_ztc = None
+            st.plotly_chart(iv_chart(selected_measurements, detail_points, ztc=selected_ztc), width="stretch", key="ztc_device_selected_curves")
     progression = go.Figure()
     for device_name, device_frame in frame.groupby("dispositivo"):
         progression.add_trace(go.Scatter(x=device_frame["campaña original"].astype(str), y=device_frame["I combinado [A]"], mode="lines+markers", name=f"{device_name} | combinado"))

@@ -39,7 +39,13 @@ def render(repository):
         st.error(f"La base tiene posibles duplicados: {integrity}")
     else:
         st.success("Integridad OK: no hay mediciones, puntos ni Tracks duplicados.")
-    st.download_button("Descargar Excel", export_excel(repository), "mediciones_exportadas.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.download_button(
+        "Exportar base completa (Excel)",
+        export_excel(repository),
+        "mediciones_exportadas.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="export_complete_database",
+    )
     _render_database_view(repository)
     unclassified = repository.unclassified()
     if not unclassified.empty:
@@ -50,7 +56,7 @@ def render(repository):
 
 def _render_database_view(repository):
     st.divider()
-    st.subheader("Visualizar base de datos")
+    st.subheader("Visualizar y editar base de datos")
     tables = {
         "Dispositivos": repository.devices,
         "Campañas": repository.campaigns,
