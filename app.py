@@ -7,6 +7,7 @@ import ui.dashboard as dashboard
 import ui.import_export as import_export
 import ui.measurements as measurements
 import ui.workbench as workbench
+import ui.ztc as ztc
 from ui.theme import apply_theme
 
 
@@ -21,15 +22,26 @@ def get_repository():
 
 
 repository = get_repository()
+st.markdown("# AMapp")
+st.caption("Laboratorio de curvas y campañas")
+sections = ["Dashboard", "Análisis automático", "Análisis manual", "Datos"]
+section = st.radio("Secciones", sections, horizontal=True, label_visibility="collapsed", key="main_section")
 st.sidebar.markdown("## AMapp")
-st.sidebar.caption("Laboratorio de curvas y campañas")
-page = st.sidebar.radio("Navegación", ["📊 Dashboard", "🔬 Mediciones", "🧰 Workbench", "📥 Importar / Exportar"])
+st.sidebar.markdown(f"**Sección activa**  \n{section}")
+st.sidebar.markdown("---")
+st.sidebar.caption("Navegación rápida")
+for item in sections:
+    st.sidebar.markdown(f"{'▸' if item == section else '·'} {item}")
 
-if page == "📊 Dashboard":
+if section == "Dashboard":
     dashboard.render(repository)
-elif page == "🔬 Mediciones":
-    measurements.render(repository)
-elif page == "🧰 Workbench":
-    workbench.render(repository)
+elif section == "Análisis automático":
+    ztc.render_automatic(repository)
+elif section == "Análisis manual":
+    workbench.render_manual(repository)
 else:
-    import_export.render(repository)
+    data_measurements, data_import = st.tabs(["Mediciones", "Importar / Exportar"])
+    with data_measurements:
+        measurements.render(repository)
+    with data_import:
+        import_export.render(repository)

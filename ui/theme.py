@@ -21,6 +21,9 @@ def apply_theme() -> None:
         [data-testid="stSidebar"] * { color: #edf4f5; }
         [data-testid="stSidebar"] [data-testid="stRadio"] label { border-radius: 8px; padding: .35rem .55rem; }
         [data-testid="stSidebar"] [data-testid="stRadio"] label:hover { background: #263743; }
+        [data-testid="stRadio"] > div[role="radiogroup"] { gap: .5rem; }
+        [data-testid="stRadio"] > div[role="radiogroup"] label { color: #ffffff; background: #000000; border: 1px solid #5d737b; border-radius: 8px; padding: .55rem .9rem; }
+        [data-testid="stRadio"] > div[role="radiogroup"] label:hover { border-color: #7de3ef; background: #17212b; }
         h1, h2, h3 { letter-spacing: 0; color: #ffffff; font-weight: 750; }
         [data-testid="stCaptionContainer"] { color: #d7e3e6; }
         [data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] p { color: #ffffff; }

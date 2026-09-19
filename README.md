@@ -31,6 +31,12 @@ La identificación de dispositivos es genérica: se toma el primer bloque numér
 3. Consultar las curvas y ejecutar `Analisis ZTC`.
 4. Descargar la base y resultados desde `Importar / Exportar`.
 
+La interfaz se organiza en cuatro secciones superiores: `Dashboard` muestra el estado
+de la base y un chat contextual para consultar mediciones y resultados; `Análisis
+automático` contiene el ZTC automático; `Análisis manual` contiene el Workbench; y
+`Datos` reúne los visores de mediciones y `Importar / Exportar`. La base SQLite y su
+esquema permanecen sin cambios.
+
 La navegación separa `I-V`, `Track Vt` y `Análisis ZTC`. El menú `Workbench` incluye un comparador de múltiples dispositivos y campañas, un explorador de todas las curvas I-V y Track Vt de un dispositivo, y un panel de matching para reasignar una medición a la campaña correcta y exportar el estado en CSV.
 
 `Análisis ZTC` trabaja únicamente con barridos que tienen una temperatura numérica identificable en el nombre o metadatos. Acepta formatos como `T20`, `temp 20`, `20 °C` y `36 grados`; excluye `sin temp`, `TXX`, `temperatura` sin número y nombres sin temperatura.

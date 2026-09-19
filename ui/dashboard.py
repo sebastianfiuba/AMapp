@@ -3,6 +3,7 @@ import streamlit as st
 
 from ui.charts import style_figure
 from ui.theme import banner
+from services.assistant import answer_question
 
 def render(repository):
     banner("Centro de control", "Estado del laboratorio", "Una lectura rápida de dispositivos, campañas, curvas y seguimiento temporal.")
@@ -24,3 +25,19 @@ def render(repository):
         st.plotly_chart(figure, width="stretch")
     else:
         st.info("Importa un Excel para comenzar a explorar mediciones.")
+    st.divider()
+    st.subheader("Mini chat del laboratorio")
+    st.caption("Consultá el estado de la base, mediciones activas, campañas, ZTC e integridad.")
+    if "dashboard_chat" not in st.session_state:
+        st.session_state.dashboard_chat = []
+    for message in st.session_state.dashboard_chat:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+    question = st.chat_input("¿Qué está pasando con mis mediciones?", key="dashboard_chat_input")
+    if question:
+        answer = answer_question(repository, question)
+        st.session_state.dashboard_chat.extend([
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": answer},
+        ])
+        st.rerun()

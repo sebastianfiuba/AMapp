@@ -344,9 +344,13 @@ def _render_absorbed_dose(repository):
     st.dataframe(result, width="stretch", hide_index=True)
 
 
-def render(repository):
+def render(repository, include_ztc: bool = True):
     banner("Mesa de trabajo", "Workbench", "Armá comparaciones, revisá un dispositivo y conectá campañas con la base.")
-    comparison, device, matching, dose, ztc = st.tabs(["Comparador", "Dispositivo", "Matching", "Dosis absorbida", "Análisis ZTC"])
+    tab_names = ["Comparador", "Dispositivo", "Matching", "Dosis absorbida"]
+    if include_ztc:
+        tab_names.append("Análisis ZTC")
+    tabs = st.tabs(tab_names)
+    comparison, device, matching, dose = tabs[:4]
     with comparison:
         _render_comparison(repository)
     with device:
@@ -355,5 +359,7 @@ def render(repository):
         _render_matching(repository)
     with dose:
         _render_absorbed_dose(repository)
-    with ztc:
-        render_ztc_panel(repository)
+
+
+def render_manual(repository):
+    render(repository, include_ztc=False)

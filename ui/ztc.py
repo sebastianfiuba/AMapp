@@ -44,6 +44,11 @@ def render_panel(repository):
     _render_analysis(repository)
 
 
+def render_automatic(repository):
+    banner("Análisis automático", "ZTC automático", "Compará automáticamente campañas y dispositivos usando solo mediciones activas.", "ztc")
+    _render_device_comparison(repository)
+
+
 def _render_analysis(repository):
     campaigns = repository.campaigns()
     if campaigns.empty:
