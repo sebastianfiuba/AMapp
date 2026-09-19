@@ -152,6 +152,19 @@ def calculate_measurement_hash(device: str, measurement: str, measurement_date: 
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _renamed_measurement(measurement: str, repository: Repository, device_id: int, campaign_id: int) -> str:
+    base = f"{measurement} (X)"
+    candidate = base
+    suffix = 2
+    while repository.connection.execute(
+        "SELECT 1 FROM mediciones WHERE dispositivo_id = ? AND campana_id = ? AND archivo = ?",
+        (device_id, campaign_id, candidate),
+    ).fetchone():
+        candidate = f"{measurement} (X{suffix})"
+        suffix += 1
+    return candidate
+
+
 def _import_one(metadata: dict[str, str], points: pd.DataFrame, repository: Repository, stats: dict[str, int], duplicate_mode: str) -> None:
     device = extract_device(metadata.get("dispositivo"), metadata.get("medicion"))
     measurement = _clean(metadata.get("medicion"))
@@ -167,6 +180,11 @@ def _import_one(metadata: dict[str, str], points: pd.DataFrame, repository: Repo
         "SELECT m.id FROM mediciones m WHERE (m.dispositivo_id = ? AND m.archivo = ?) OR m.measurement_hash = ?",
         (device_id, measurement, values["measurement_hash"]),
     ).fetchone()
+    if existing and duplicate_mode == "renombrar":
+        measurement = _renamed_measurement(measurement, repository, device_id, campaign_id)
+        values["archivo"] = measurement
+        values["measurement_hash"] = calculate_measurement_hash(device, measurement, measurement_date, points)
+        existing = None
     if existing and duplicate_mode == "conservar":
         stats["ya_existentes"] += 1
         stats["duplicados_evitados"] += 1
@@ -182,7 +200,7 @@ def _import_one(metadata: dict[str, str], points: pd.DataFrame, repository: Repo
     stats["duplicados_evitados"] += int(not created) + max(0, len(points) - added_points)
 
 
-def _import_frames(frames: list[tuple[str, pd.DataFrame]], repository: Repository, duplicate_mode: str = "actualizar") -> dict:
+def _import_frames(frames: list[tuple[str, pd.DataFrame]], repository: Repository, duplicate_mode: str = "renombrar") -> dict:
     stats = {"mediciones_nuevas": 0, "mediciones_actualizadas": 0, "ya_existentes": 0, "duplicados_evitados": 0, "puntos_nuevos": 0}
     errors = []
     catalog = _metadata_catalog(frames)
@@ -255,7 +273,7 @@ def _import_unclassified_frames(frames: list[tuple[str, pd.DataFrame]], source_f
     return imported
 
 
-def import_excel(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: str = "actualizar") -> dict:
+def import_excel(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: str = "renombrar") -> dict:
     frames = list(pd.read_excel(uploaded_file, sheet_name=None, header=None).items())
     source_file = getattr(uploaded_file, "name", "archivo.xlsx")
     summary = _import_frames(frames, repository, duplicate_mode)
@@ -268,7 +286,7 @@ def import_excel(uploaded_file: BinaryIO, repository: Repository, duplicate_mode
     return summary
 
 
-def import_measurement(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: str = "actualizar") -> dict:
+def import_measurement(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: str = "renombrar") -> dict:
     raw = uploaded_file.read()
     name = getattr(uploaded_file, "name", "medicion.ri")
     frame = pd.read_csv(io.BytesIO(raw), sep=r"[,;\t ]+", engine="python", header=None, comment="#")

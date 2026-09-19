@@ -192,7 +192,7 @@ class Repository:
             sql += " WHERE m.campana_id = ?"
             params = (campaign_id,)
         if not include_deleted:
-            sql += " AND " if " WHERE " in sql else " WHERE "
+            sql += " AND " if campaign_id is not None else " WHERE "
             sql += "m.eliminado = 0"
         return self._query(sql + " ORDER BY m.id", params)
 

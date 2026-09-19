@@ -10,13 +10,7 @@ from ui.measurement_editor import render_measurement_editor
 def render(repository):
     banner("Datos y trazabilidad", "Importar / Exportar", "Cargá mediciones, revisá formatos no clasificados y descargá una copia completa.")
     uploaded = st.file_uploader("Selecciona un Excel o una medicion (.xlsx, .xls, .xlsm, .ri)", type=["xlsx", "xls", "xlsm", "ri"])
-    duplicate_mode = st.selectbox(
-        "Si una medición ya existe",
-        options=["actualizar", "conservar", "reemplazar"],
-        format_func={"actualizar": "Actualizar puntos y metadatos", "conservar": "Conservar la existente", "reemplazar": "Reemplazar todos sus puntos"}.get,
-        help="La medición existente nunca se borra. Reemplazar solo sustituye sus puntos por los del archivo.",
-        key="import_duplicate_mode",
-    )
+    duplicate_mode = "renombrar"
     if uploaded and st.button("Importar datos", type="primary"):
         with st.spinner("Importando..."):
             input_type = detect_input_type(uploaded)

@@ -18,7 +18,7 @@ El archivo `.xlsx` debe contener una hoja plana con las columnas obligatorias `d
 
 Las mediciones tienen además el flag `eliminado`. No borra puntos ni metadatos: las excluye de las consultas y cálculos activos, y se puede activar o quitar desde `Importar / Exportar` -> `Visualizar base de datos` -> `Mediciones`. Al guardar un cambio en ese flag, las campañas afectadas recalculan automáticamente su ZTC; si ya no quedan al menos dos temperaturas válidas, se elimina el resultado guardado.
 
-Las filas inválidas se informan sin detener la importación. Antes de importar se puede elegir qué hacer con mediciones duplicadas: conservar la existente, actualizar sus puntos y metadatos, o reemplazar sus puntos por los del archivo. En ningún caso se borra la medición ni sus metadatos.
+Las filas inválidas se informan sin detener la importación. Si una medición ya existe, se conserva y la nueva se importa automáticamente con un nombre alternativo como `M1 (X)` o `M1 (X2)`. En ningún caso se borra la medición ni sus metadatos.
 
 También se aceptan libros con hojas de mediciones exportadas por el instrumento. Las hojas con columnas `V` e `I` se importan como curvas I-V. Las hojas con bloques `t [s]` y `Vt [V]` se importan como Track Vt, separados por dispositivo y canal. Los Track Vt se visualizan y exportan, pero no participan todavía en el análisis ZTC.
 

@@ -1,6 +1,7 @@
 import streamlit as st
 
 from ui.charts import chart_downloads, iv_chart
+from ui.measurement_editor import render_measurement_editor
 from ui.theme import banner
 
 
@@ -16,6 +17,11 @@ def render(repository):
     measurements = repository.measurements_for_campaigns(ids)
     if measurements.empty:
         st.info("Las campañas seleccionadas no tienen curvas I-V.")
+        return
+    render_measurement_editor(repository, measurements, "iv_page_measurements")
+    measurements = measurements[measurements.activa.astype(bool)]
+    if measurements.empty:
+        st.info("Las mediciones seleccionadas están inactivas.")
         return
     points = {int(row.id): repository.points(int(row.id)) for row in measurements.itertuples()}
     figure = iv_chart(measurements, points)

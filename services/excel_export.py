@@ -57,7 +57,7 @@ def export_integrity(repository: Repository) -> dict[str, int]:
     checks = {
         "mediciones_duplicadas": "SELECT COUNT(*) - COUNT(DISTINCT campana_id || ':' || archivo) FROM mediciones",
         "puntos_iv_duplicados": "SELECT COUNT(*) - COUNT(DISTINCT medicion_id || ':' || v || ':' || i) FROM puntos",
-        "tracks_duplicados": "SELECT COUNT(*) - COUNT(DISTINCT dispositivo_id || ':' || archivo || ':' || canal) FROM tracks_vt",
+        "tracks_duplicados": "SELECT COUNT(*) - COUNT(DISTINCT dispositivo_id || ':' || track_key) FROM tracks_vt",
         "puntos_track_duplicados": "SELECT COUNT(*) - COUNT(DISTINCT track_id || ':' || t || ':' || vt) FROM puntos_track_vt",
     }
     return {name: max(0, int(repository.connection.execute(sql).fetchone()[0] or 0)) for name, sql in checks.items()}

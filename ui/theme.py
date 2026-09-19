@@ -40,7 +40,7 @@ def apply_theme() -> None:
         [data-baseweb="select"] input, [data-baseweb="select"] span { color: var(--ink); }
         [data-baseweb="popover"] [role="option"], [data-baseweb="popover"] [role="listbox"] { background: var(--panel); color: var(--ink); }
         [data-baseweb="popover"] [role="option"]:hover { background: #e8f2f3; color: #075866; }
-        [data-testid="stButton"] button, [data-testid="stDownloadButton"] button, [data-testid="stFormSubmitButton"] button { min-height: 2.65rem; border-radius: 8px; font-weight: 650; color: var(--ink); background: var(--panel); border: 1px solid var(--line); }
+        [data-testid="stButton"] button, [data-testid="stDownloadButton"] button, [data-testid="stFormSubmitButton"] button { min-height: 2.65rem; border-radius: 8px; font-weight: 650; color: #075866; background: #e8f2f3; border: 1px solid #8bbdc4; }
         [data-testid="stButton"] button:hover, [data-testid="stDownloadButton"] button:hover, [data-testid="stFormSubmitButton"] button:hover { color: #075866; border-color: var(--iv); background: #e8f2f3; }
         [data-testid="stButton"] button[kind="primary"], [data-testid="stFormSubmitButton"] button[kind="primary"] { color: #ffffff; background: var(--iv); border-color: var(--iv); }
         [data-testid="stButton"] button[kind="primary"]:hover, [data-testid="stFormSubmitButton"] button[kind="primary"]:hover { color: #ffffff; background: #075866; }

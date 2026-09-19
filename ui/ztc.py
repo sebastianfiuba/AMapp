@@ -7,6 +7,7 @@ import pandas as pd
 
 from services.measurements import campaign_analysis_methods, extract_temperature, individual_result, temperature_measurements
 from ui.charts import CURVE_COLORS, ZTC_COLOR, campaign_context, iv_chart, style_figure
+from ui.measurement_editor import render_measurement_editor
 from ui.theme import banner
 from utils.helpers import format_current
 
@@ -77,8 +78,13 @@ def _render_analysis(repository):
 
 
 def _render_campaign(repository, campaign, campaign_id: int):
-    measurements = temperature_measurements(repository.iv_measurements(campaign_id))
+    all_measurements = temperature_measurements(repository.iv_measurements(campaign_id, include_deleted=True))
+    render_measurement_editor(repository, all_measurements, f"ztc_manual_{campaign_id}")
+    measurements = all_measurements[all_measurements.activa.astype(bool)]
     st.caption(f"{len(measurements)} medicion(es) disponibles")
+    if measurements.empty:
+        st.info("No hay mediciones activas para calcular ZTC.")
+        return
     if st.button("Calcular / actualizar ZTC", type="primary"):
         try:
             result, dispersion = campaign_analysis_methods(repository, campaign_id, measurements)
@@ -237,9 +243,10 @@ def _render_evolution(repository, campaigns, labels):
         if selected_campaign_id is not None:
             selected_campaign = campaigns[campaigns.id == selected_campaign_id]
             if not selected_campaign.empty:
-                selected_measurements = temperature_measurements(repository.iv_measurements(selected_campaign_id))
+                selected_measurements = temperature_measurements(repository.iv_measurements(selected_campaign_id, include_deleted=True))
                 st.subheader(f"Campaña seleccionada: {selected_campaign.iloc[0].numero}")
-                st.dataframe(selected_measurements[["id", "archivo", "fecha", "descripcion", "clase", "estado"]], hide_index=True, width="stretch")
+                render_measurement_editor(repository, selected_measurements, f"ztc_evolution_{selected_campaign_id}")
+                selected_measurements = selected_measurements[selected_measurements.activa.astype(bool)]
                 detail_points = {int(row.id): repository.points(int(row.id)) for row in selected_measurements.itertuples()}
                 st.plotly_chart(iv_chart(selected_measurements, detail_points), width="stretch", key="ztc_selected_campaign_curves")
     st.caption("Las estrellas son los puntos ZTC de cada campaña. La tabla expresa la corriente en µA.")
@@ -288,9 +295,10 @@ def _render_device_comparison(repository):
     if selected_campaign_id is not None:
         selected_campaign = campaigns[campaigns.id == selected_campaign_id]
         if not selected_campaign.empty:
-            selected_measurements = temperature_measurements(repository.iv_measurements(selected_campaign_id))
+            selected_measurements = temperature_measurements(repository.iv_measurements(selected_campaign_id, include_deleted=True))
             st.subheader(f"Campaña seleccionada: {selected_campaign.iloc[0].dispositivo} | {selected_campaign.iloc[0].numero}")
-            st.dataframe(selected_measurements[["id", "archivo", "fecha", "descripcion", "clase", "estado"]], hide_index=True, width="stretch")
+            render_measurement_editor(repository, selected_measurements, f"ztc_automatic_{selected_campaign_id}")
+            selected_measurements = selected_measurements[selected_measurements.activa.astype(bool)]
             detail_points = {int(row.id): repository.points(int(row.id)) for row in selected_measurements.itertuples()}
             st.plotly_chart(iv_chart(selected_measurements, detail_points), width="stretch", key="ztc_device_selected_curves")
     progression = go.Figure()

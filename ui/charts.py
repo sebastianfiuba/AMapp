@@ -10,8 +10,8 @@ def style_figure(figure, height: int = 560, right_margin: int = 30):
         height=height,
         margin={"l": 70, "r": right_margin, "t": 55, "b": 70},
         template="plotly_white",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="#e8f2f3",
+        plot_bgcolor="#f1f6f5",
         font={"family": "Source Sans 3, sans-serif", "color": "#17212b"},
     )
     return figure
