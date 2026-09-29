@@ -154,3 +154,23 @@ def individual_result(repository: Repository, measurement_id: int, vt_ztc: float
         "error_vt": vt_error, "error_vt_pct": 100 * vt_error / vt_ztc if vt_ztc else None,
         "error_i_ztc": i_error, "error_i_ztc_pct": 100 * i_error / i_ztc if i_ztc else None,
     }
+
+
+def compare_measurements_to_reference(repository: Repository, measurements: pd.DataFrame, reference_id: int) -> pd.DataFrame:
+    if measurements.empty or reference_id not in measurements.id.to_numpy():
+        raise ValueError("la medicion de referencia no esta en la seleccion activa")
+    reference = individual_result(repository, reference_id, 0.0, 0.0)
+    rows = []
+    for measurement in measurements.itertuples():
+        point = individual_result(repository, int(measurement.id), reference["vt_individual"], reference["i_individual"])
+        rows.append({
+            "id": int(measurement.id),
+            "medicion": measurement.archivo,
+            "vt_individual": point["vt_individual"],
+            "error_vt": point["error_vt"],
+            "error_vt_pct": point["error_vt_pct"],
+            "i_individual": point["i_individual"],
+            "error_i": point["error_i_ztc"],
+            "error_i_pct": point["error_i_ztc_pct"],
+        })
+    return pd.DataFrame(rows)

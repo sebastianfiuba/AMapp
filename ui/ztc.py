@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
 
-from services.measurements import campaign_analysis_methods, extract_temperature, individual_result, temperature_measurements
+from services.measurements import campaign_analysis_methods, compare_measurements_to_reference, extract_temperature, individual_result, temperature_measurements
 from ui.charts import CURVE_COLORS, ZTC_COLOR, campaign_context, iv_chart, style_figure
 from ui.measurement_editor import render_measurement_editor
 from ui.theme import banner
@@ -31,6 +31,36 @@ def _selected_point(selection):
 def campaign_label(row) -> str:
     treatment = str(row.numero)
     return f"{row.dispositivo} | {treatment}"
+
+
+def _measurement_label(row) -> str:
+    temperature = extract_temperature(row)
+    suffix = f" | {temperature:g} °C" if temperature is not None else ""
+    return f"{row.archivo}{suffix} (id {row.id})"
+
+
+def _render_reference_comparison(repository, measurements, reference_id: int, key: str) -> None:
+    try:
+        comparison = compare_measurements_to_reference(repository, measurements, reference_id)
+    except ValueError as error:
+        st.warning(str(error))
+        return
+    comparison = comparison.rename(columns={
+        "medicion": "Medición",
+        "vt_individual": "VT individual [V]",
+        "error_vt": "ΔVT [V]",
+        "error_vt_pct": "Error VT [%]",
+        "i_individual": "I individual [µA]",
+        "error_i": "ΔI [µA]",
+        "error_i_pct": "Error I [%]",
+    })
+    comparison["I individual [µA]"] *= 1_000_000
+    comparison["ΔI [µA]"] *= 1_000_000
+    st.subheader("Errores respecto de la medición seleccionada")
+    st.caption("Cada curva usa su punto individual (mínimo |I|). ΔVT y ΔI se calculan respecto de ese punto en la medición de referencia.")
+    st.dataframe(comparison[["Medición", "VT individual [V]", "ΔVT [V]", "Error VT [%]",
+                             "I individual [µA]", "ΔI [µA]", "Error I [%]"]],
+                 hide_index=True, width="stretch", key=key)
 
 
 def render(repository):
@@ -161,13 +191,14 @@ def _render_dispersion_dashboard(repository, measurements, dispersion: pd.DataFr
                                    "Valor": [float(dispersion.loc[dispersion.relative_error.idxmin(), "v"]), float(dispersion.v.iloc[np.abs(dispersion.d_i_d_t).argmin()]),
                                               f"{dispersion.relative_error.min():.3%}", dispersion.temperatures.iloc[0]]}), hide_index=True, width="stretch")
         labels = {f"{row.archivo} | {extract_temperature(row):g} °C": int(row.id) for row in measurements.itertuples()}
-        selected = st.selectbox("Medición para detalle", list(labels), key=f"dispersion_measurement_{title}")
+        selected = st.selectbox("Medición de referencia y detalle", list(labels), key=f"dispersion_measurement_{title}")
         selected_points = repository.points(labels[selected])
         selected_row = measurements[measurements.id == labels[selected]].iloc[0]
         detail_figure = iv_chart(measurements[measurements.id == labels[selected]], {int(selected_row.id): selected_points}, ztc=ztc)
         st.plotly_chart(detail_figure, width="stretch", key=f"dispersion_measurement_chart_{title}")
         st.dataframe(pd.DataFrame({"Característica": ["Archivo", "Temperatura", "Puntos", "V mínimo", "V máximo", "I mínimo", "I máximo"],
                                    "Valor": [selected_row.archivo, extract_temperature(selected_row), len(selected_points), selected_points.v.min(), selected_points.v.max(), selected_points.i.min(), selected_points.i.max()]}), hide_index=True, width="stretch")
+        _render_reference_comparison(repository, measurements, int(selected_row.id), f"reference_errors_{title}")
 
 
 def _render_evolution(repository, campaigns, labels):
@@ -335,6 +366,12 @@ def _render_device_comparison(repository):
             except ValueError:
                 selected_ztc = None
             st.plotly_chart(iv_chart(selected_measurements, detail_points, ztc=selected_ztc), width="stretch", key="ztc_device_selected_curves")
+            if not selected_measurements.empty:
+                reference_options = {_measurement_label(row): int(row.id) for row in selected_measurements.itertuples()}
+                reference_label = st.selectbox("Medición de referencia", list(reference_options),
+                                               key=f"ztc_automatic_reference_{selected_campaign_id}")
+                _render_reference_comparison(repository, selected_measurements, reference_options[reference_label],
+                                             f"ztc_automatic_reference_errors_{selected_campaign_id}")
     progression = go.Figure()
     for device_name, device_frame in frame.groupby("dispositivo"):
         progression.add_trace(go.Scatter(x=device_frame["campaña original"].astype(str), y=device_frame["I combinado [A]"], mode="lines+markers", name=f"{device_name} | combinado"))
