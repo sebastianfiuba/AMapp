@@ -139,8 +139,10 @@ def _render_campaign(repository, campaign, campaign_id: int):
             _render_dispersion_dashboard(repository, measurements, dispersion, f"Campaña {campaign.numero}", (result["combined"]["vt_ztc"], result["combined"]["i_ztc"]))
             candidates = dispersion.attrs.get("crossing_candidates", [])
             if candidates:
-                st.caption("Se detectaron varios cruces de pendiente; el seleccionado queda marcado por su score estable.")
-                st.dataframe(pd.DataFrame(candidates), hide_index=True, width="stretch")
+                st.caption("Se evalúan cruces de dI/dT y de pares de barridos; la selección pondera dispersión global y estabilidad local y por tramo.")
+                candidate_frame = pd.DataFrame(candidates)
+                candidate_frame["seleccionado"] = np.isclose(candidate_frame["vt"], result["combined"]["vt_ztc"])
+                st.dataframe(candidate_frame, hide_index=True, width="stretch")
 
 
 def _render_dispersion_dashboard(repository, measurements, dispersion: pd.DataFrame, title: str, ztc: tuple[float, float]):

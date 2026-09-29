@@ -362,4 +362,4 @@ def render(repository, include_ztc: bool = True):
 
 
 def render_manual(repository):
-    render(repository, include_ztc=False)
+    render(repository, include_ztc=True)

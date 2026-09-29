@@ -1,7 +1,7 @@
 import streamlit as st
 
 from ui.charts import chart_downloads, iv_chart
-from ui.measurement_editor import render_measurement_editor
+from ui.measurement_editor import recalculate_campaigns, render_measurement_editor
 from ui.track_vt import render_panel as render_track_panel
 from ui.theme import banner
 
@@ -21,9 +21,19 @@ def render_iv_panel(repository):
     campaign_ids = [campaign_options[label] for label in selected_campaigns]
     measurements = repository.iv_measurements(include_deleted=True)
     measurements = measurements[measurements.dispositivo_id.isin(device_ids) & measurements.campana_id.isin(campaign_ids)]
+    search_text = st.text_input("Buscar mediciones", placeholder="Archivo, dispositivo, campaña o metadata", key="measurements_search")
+    state_filter = st.selectbox("Estado", ["Todas", "Activas", "Eliminadas"], key="measurements_state_filter")
+    if search_text:
+        searchable = measurements.fillna("").astype(str).agg(" ".join, axis=1)
+        measurements = measurements[searchable.str.contains(search_text, case=False, regex=False)]
+    if state_filter == "Activas":
+        measurements = measurements[measurements.activa.astype(bool)]
+    elif state_filter == "Eliminadas":
+        measurements = measurements[~measurements.activa.astype(bool)]
     if measurements.empty:
-        st.info("Selecciona un dispositivo y una campaña con datos I-V.")
+        st.info("No hay mediciones que coincidan con los filtros.")
         return
+    st.caption(f"{len(measurements)} medición(es) encontradas. Las eliminadas se conservan y pueden restaurarse.")
     render_measurement_editor(repository, measurements, "measurements_iv")
     measurement_options = {f"{row.dispositivo} | {row.campana} | {row.archivo}": int(row.id) for row in measurements.itertuples()}
     active_labels = [label for label, measurement_id in measurement_options.items() if bool(measurements.loc[measurements.id == measurement_id, "activa"].iloc[0])]
@@ -43,6 +53,15 @@ def render_iv_panel(repository):
     row = measurements[measurements.id == measurement_options[selected]].iloc[0]
     st.dataframe(row[["dispositivo", "campana", "archivo", "fecha", "descripcion", "clase", "estado"]].to_frame("Valor"), width="stretch")
     st.dataframe(repository.points(int(row.id)), width="stretch", hide_index=True)
+    active = bool(row.activa)
+    action = "Desactivar medición" if active else "Restaurar medición"
+    if st.button(action, key="measurements_toggle_deleted"):
+        campaign_id = repository.set_measurement_deleted(int(row.id), not active)
+        if campaign_id is not None:
+            recalculate_campaigns(repository, {campaign_id})
+            repository.connection.commit()
+            st.success("Medición desactivada; se conservan puntos y metadata." if active else "Medición restaurada.")
+            st.rerun()
 
 
 def render(repository):

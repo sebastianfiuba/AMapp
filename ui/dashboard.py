@@ -26,14 +26,14 @@ def render(repository):
     else:
         st.info("Importa un Excel para comenzar a explorar mediciones.")
     st.divider()
-    st.subheader("Mini chat del laboratorio")
-    st.caption("Consultá el estado de la base, mediciones activas, campañas, ZTC e integridad.")
+    st.subheader("Analista local")
+    st.caption("Análisis contextual con Ollama local gratuito si está disponible; si no, usa cálculos directos de la base.")
     if "dashboard_chat" not in st.session_state:
         st.session_state.dashboard_chat = []
     for message in st.session_state.dashboard_chat:
         with st.chat_message(message["role"]):
             st.write(message["content"])
-    question = st.chat_input("¿Qué está pasando con mis mediciones?", key="dashboard_chat_input")
+    question = st.chat_input("Ej.: analiza dispositivo 17, campaña 15", key="dashboard_chat_input")
     if question:
         answer = answer_question(repository, question)
         st.session_state.dashboard_chat.extend([

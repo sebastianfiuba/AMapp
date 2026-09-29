@@ -37,6 +37,12 @@ automático` contiene el ZTC automático; `Análisis manual` contiene el Workben
 `Datos` reúne los visores de mediciones y `Importar / Exportar`. La base SQLite y su
 esquema permanecen sin cambios.
 
+El analista del Dashboard puede usar Ollama local sin API ni costo por consulta.
+Instala Ollama y ejecuta `ollama pull qwen2.5:0.5b`; la app lo detecta en
+`http://127.0.0.1:11434`. Se puede cambiar el endpoint con `OLLAMA_HOST` y el modelo
+con `OLLAMA_MODEL`. Si Ollama no está disponible, las consultas siguen usando el
+análisis determinista de las mediciones.
+
 La navegación separa `I-V`, `Track Vt` y `Análisis ZTC`. El menú `Workbench` incluye un comparador de múltiples dispositivos y campañas, un explorador de todas las curvas I-V y Track Vt de un dispositivo, y un panel de matching para reasignar una medición a la campaña correcta y exportar el estado en CSV.
 
 `Análisis ZTC` trabaja únicamente con barridos que tienen una temperatura numérica identificable en el nombre o metadatos. Acepta formatos como `T20`, `temp 20`, `20 °C` y `36 grados`; excluye `sin temp`, `TXX`, `temperatura` sin número y nombres sin temperatura.
@@ -45,9 +51,9 @@ Para cada campaña se calcula y muestra un único resultado combinado:
 
 - El componente de pendiente `dI/dT` interpola linealmente las curvas en el intervalo de tensión común y ajusta la corriente contra la temperatura para cada `VT`.
 - El componente de error relativo usa `max(I)-min(I)` dividido por la corriente media absoluta.
-- El score combinado da prioridad a cruces reales de pendiente y usa el error relativo como desempate/localización secundaria. La corriente de 50–300 µA no se impone como filtro del análisis; solo puede usarse para evaluar variantes automáticas durante pruebas.
+- El score combinado evalúa cruces de `dI/dT` y cruces entre pares de barridos. Cada candidato considera la dispersión absoluta de todas las curvas, el error relativo, la pendiente local y la estabilidad del tramo entre candidatos vecinos. No se impone un filtro de corriente objetivo.
 
-La aplicación usa un objetivo `combinado` como resultado ZTC principal: normaliza `|dI/dT|` y el error relativo con escalas robustas, prioriza candidatos donde la pendiente cambia de signo y minimiza ambos términos. La vista de Evolución permite elegir un único dispositivo, guardar el conjunto de campañas, ver la progresión de `I ZTC` y consultar la dispersión de todas las campañas seleccionadas en un dashboard de dos columnas. La comparación automática entre dispositivos vive dentro de `Análisis ZTC` y entrega una tabla y gráficos seleccionables para revisión manual.
+La aplicación usa un objetivo `combinado` como resultado ZTC principal: normaliza dispersión absoluta, error relativo y `|dI/dT|` con escalas robustas y elige candidatos con estabilidad local y en el tramo que representan. Así puede conservar un cruce localizado entre dos temperaturas cuando las otras curvas también permanecen próximas, sin imponer una corriente objetivo. La vista de Evolución permite elegir un único dispositivo, guardar el conjunto de campañas, ver la progresión de `I ZTC` y consultar la dispersión de todas las campañas seleccionadas en un dashboard de dos columnas. La comparación automática entre dispositivos vive dentro de `Análisis ZTC` y entrega una tabla y gráficos seleccionables para revisión manual.
 
 Falsos positivos conocidos y corregidos: `sin temp` antes podía tomar el número de campaña como temperatura; `TXX` no representa una temperatura numérica; `temperatura` sola tampoco alcanza. Todos quedan fuera del análisis hasta que se agregue un valor explícito.
 
