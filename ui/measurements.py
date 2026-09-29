@@ -4,6 +4,7 @@ from ui.charts import chart_downloads, iv_chart
 from ui.measurement_editor import recalculate_campaigns, render_measurement_editor
 from ui.track_vt import render_panel as render_track_panel
 from ui.theme import banner
+from services.measurements import iv_measurement_noise_flags
 
 
 def render_iv_panel(repository):
@@ -33,7 +34,19 @@ def render_iv_panel(repository):
     if measurements.empty:
         st.info("No hay mediciones que coincidan con los filtros.")
         return
-    st.caption(f"{len(measurements)} medición(es) encontradas. Las eliminadas se conservan y pueden restaurarse.")
+    active_measurements = measurements[measurements.activa.astype(bool)]
+    active_points = {int(row.id): repository.points(int(row.id)) for row in active_measurements.itertuples()}
+    noise_flags = iv_measurement_noise_flags(active_measurements, active_points)
+    measurements = measurements.merge(noise_flags, on="id", how="left")
+    measurements["control_iv"] = measurements["control_iv"].fillna("Inactiva")
+    only_flagged = st.checkbox("Mostrar solo mediciones con ruido exagerado", key="measurements_noise_filter")
+    if only_flagged:
+        measurements = measurements[measurements.control_iv == "REVISAR ruido"]
+    flagged_count = int((noise_flags.control_iv == "REVISAR ruido").sum())
+    st.caption(f"{len(measurements)} medición(es) visibles; {flagged_count} con posible ruido aleatorio. Alerta automática, requiere revisión.")
+    if measurements.empty:
+        st.info("No hay mediciones marcadas con ruido exagerado.")
+        return
     render_measurement_editor(repository, measurements, "measurements_iv")
     measurement_options = {f"{row.dispositivo} | {row.campana} | {row.archivo}": int(row.id) for row in measurements.itertuples()}
     active_labels = [label for label, measurement_id in measurement_options.items() if bool(measurements.loc[measurements.id == measurement_id, "activa"].iloc[0])]

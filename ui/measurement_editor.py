@@ -31,10 +31,13 @@ def render_measurement_editor(repository, frame: pd.DataFrame, key: str) -> pd.D
     view = measurement_view(frame)
     if view.empty:
         return view
-    columns = [column for column in ("id", "dispositivo", "campana", "archivo", *METADATA_COLUMNS) if column in view]
+    columns = [column for column in ("id", "dispositivo", "campana", "archivo", "control_iv", *METADATA_COLUMNS) if column in view]
     edit_mode = st.toggle("Modo edición de metadata", key=f"{key}_edit_mode")
     if not edit_mode:
-        st.dataframe(view[columns], width="stretch", hide_index=True, column_config={"activa": st.column_config.CheckboxColumn("Activa")})
+        st.dataframe(view[columns], width="stretch", hide_index=True, column_config={
+            "activa": st.column_config.CheckboxColumn("Activa"),
+            "control_iv": st.column_config.TextColumn("Control I-V", help="Alerta automática por ruido local; revisar la curva antes de excluirla."),
+        })
         return view
     editable = [column for column in METADATA_COLUMNS if column in view]
     edited = st.data_editor(
@@ -42,7 +45,10 @@ def render_measurement_editor(repository, frame: pd.DataFrame, key: str) -> pd.D
         width="stretch",
         hide_index=True,
         disabled=[column for column in columns if column not in editable],
-        column_config={"activa": st.column_config.CheckboxColumn("Activa", help="Si se desmarca, la medición queda eliminada lógicamente y no entra en gráficos ni cálculos.")},
+        column_config={
+            "activa": st.column_config.CheckboxColumn("Activa", help="Si se desmarca, la medición queda eliminada lógicamente y no entra en gráficos ni cálculos."),
+            "control_iv": st.column_config.TextColumn("Control I-V", help="Alerta automática por ruido local; revisar la curva antes de excluirla."),
+        },
         key=f"{key}_editor",
     )
     if st.button("Guardar metadata", type="primary", key=f"{key}_save"):
