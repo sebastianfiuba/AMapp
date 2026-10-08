@@ -2,14 +2,14 @@ import streamlit as st
 import pandas as pd
 
 from services.excel_export import export_excel, export_integrity
-from services.excel_import import detect_input_type, import_excel, import_measurement
+from services.excel_import import detect_input_type, import_excel, import_measurement, import_rar
 from ui.theme import banner
 from ui.measurement_editor import render_measurement_editor
 
 
 def render(repository):
     banner("Datos y trazabilidad", "Importar / Exportar", "Cargá mediciones, revisá formatos no clasificados y descargá una copia completa.")
-    uploaded = st.file_uploader("Selecciona un Excel o una medicion (.xlsx, .xls, .xlsm, .ri)", type=["xlsx", "xls", "xlsm", "ri"])
+    uploaded = st.file_uploader("Selecciona un Excel, una medición o un RAR (.xlsx, .xls, .xlsm, .ri, .rar)", type=["xlsx", "xls", "xlsm", "ri", "rar"])
     duplicate_mode = "renombrar"
     if uploaded and st.button("Importar datos", type="primary"):
         with st.spinner("Importando..."):
@@ -19,8 +19,10 @@ def render(repository):
                     summary = import_excel(uploaded, repository, duplicate_mode)
                 elif input_type == "medicion":
                     summary = import_measurement(uploaded, repository, duplicate_mode)
+                elif input_type == "rar":
+                    summary = import_rar(uploaded, repository)
                 else:
-                    raise ValueError("tipo de archivo no reconocido; usa .xlsx, .xls, .xlsm o .ri")
+                    raise ValueError("tipo de archivo no reconocido; usa .xlsx, .xls, .xlsm, .ri o .rar")
             except ValueError as error:
                 st.error(str(error))
                 return
@@ -29,6 +31,8 @@ def render(repository):
         st.write(f"Duplicados evitados: {summary.get('duplicados_evitados', 0)} | Puntos V/I nuevos: {summary.get('puntos_nuevos', 0)}")
         st.write(f"Tracks Vt nuevos: {summary.get('tracks_nuevos', 0)} | Puntos Track nuevos: {summary.get('track_points_nuevos', 0)}")
         st.write(f"Hojas sin clasificar nuevas: {summary.get('sin_clasificar_nuevos', 0)}")
+        if "archivos_seleccionados" in summary:
+            st.write(f"Archivos 2ndn .ri revisados: {summary['archivos_seleccionados']}")
         if summary["errores"]:
             st.warning("Algunas filas requieren revision.")
             st.dataframe(summary["errores"], width="stretch", hide_index=True)
@@ -39,13 +43,15 @@ def render(repository):
         st.error(f"La base tiene posibles duplicados: {integrity}")
     else:
         st.success("Integridad OK: no hay mediciones, puntos ni Tracks duplicados.")
-    st.download_button(
-        "Exportar base completa (Excel)",
-        export_excel(repository),
-        "mediciones_exportadas.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="export_complete_database",
-    )
+    try:
+        export_content = export_excel(repository)
+    except Exception as error:
+        st.error(f"No se pudo generar el Excel; la base sigue disponible para editar: {error}")
+    else:
+        st.download_button(
+            "Exportar base completa (Excel)", export_content, "mediciones_exportadas.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="export_complete_database",
+        )
     _render_database_view(repository)
     unclassified = repository.unclassified()
     if not unclassified.empty:
@@ -78,6 +84,24 @@ def _render_database_view(repository):
     st.caption(f"{len(frame)} registro(s) visibles")
     if selected_table == "Mediciones" and not frame.empty:
         render_measurement_editor(repository, frame, "database_measurements")
+    elif selected_table == "Campañas" and not frame.empty:
+        edited = st.data_editor(frame[["id", "dispositivo", "numero"]], disabled=["id", "dispositivo"],
+                                width="stretch", hide_index=True, key="database_campaigns_editor")
+        if st.button("Guardar cambios de campañas", type="primary", key="save_database_campaigns"):
+            for row in edited.itertuples(index=False):
+                repository.rename_campaign(int(row.id), str(row.numero))
+            repository.connection.commit()
+            st.success("Campañas actualizadas.")
+            st.rerun()
+    elif selected_table == "Dispositivos" and not frame.empty:
+        edited = st.data_editor(frame[["id", "nombre", "tag", "numero"]], disabled=["id", "tag", "numero"],
+                                width="stretch", hide_index=True, key="database_devices_editor")
+        if st.button("Guardar cambios de dispositivos", type="primary", key="save_database_devices"):
+            for row in edited.itertuples(index=False):
+                repository.rename_device(int(row.id), str(row.nombre))
+            repository.connection.commit()
+            st.success("Dispositivos actualizados.")
+            st.rerun()
     else:
         st.dataframe(frame, width="stretch", hide_index=True)
     st.download_button("Descargar tabla visible CSV", frame.to_csv(index=False).encode("utf-8"), f"{selected_table.lower().replace(' ', '_')}.csv", "text/csv", key="database_table_csv")

@@ -6,7 +6,7 @@ import streamlit as st
 from services.measurements import campaign_analysis_methods, temperature_measurements
 
 
-METADATA_COLUMNS = ("fecha", "descripcion", "clase", "estado", "activa")
+METADATA_COLUMNS = ("fecha", "descripcion", "clase", "estado", "observaciones", "aceptada", "caso_no_aceptacion", "activa")
 
 
 def measurement_view(frame: pd.DataFrame) -> pd.DataFrame:
@@ -36,6 +36,8 @@ def render_measurement_editor(repository, frame: pd.DataFrame, key: str) -> pd.D
     if not edit_mode:
         st.dataframe(view[columns], width="stretch", hide_index=True, column_config={
             "activa": st.column_config.CheckboxColumn("Activa"),
+            "aceptada": st.column_config.CheckboxColumn("Aceptada"),
+            "caso_no_aceptacion": st.column_config.TextColumn("Caso no aceptación"),
             "control_iv": st.column_config.TextColumn("Control I-V", help="Alerta automática por ruido local; revisar la curva antes de excluirla."),
         })
         return view
@@ -47,6 +49,8 @@ def render_measurement_editor(repository, frame: pd.DataFrame, key: str) -> pd.D
         disabled=[column for column in columns if column not in editable],
         column_config={
             "activa": st.column_config.CheckboxColumn("Activa", help="Si se desmarca, la medición queda eliminada lógicamente y no entra en gráficos ni cálculos."),
+            "aceptada": st.column_config.CheckboxColumn("Aceptada"),
+            "caso_no_aceptacion": st.column_config.TextColumn("Caso no aceptación"),
             "control_iv": st.column_config.TextColumn("Control I-V", help="Alerta automática por ruido local; revisar la curva antes de excluirla."),
         },
         key=f"{key}_editor",

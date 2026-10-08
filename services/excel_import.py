@@ -3,6 +3,9 @@ from __future__ import annotations
 import hashlib
 import io
 import re
+import shutil
+import subprocess
+from pathlib import PurePosixPath
 from typing import BinaryIO
 
 import pandas as pd
@@ -17,6 +20,7 @@ ALIASES = {
     "i": ["i", "corriente", "current", "corriente [a]"],
     "fecha": ["fecha", "date"], "descripcion": ["descripcion", "descripción", "description"],
     "clase": ["clase", "class"], "estado": ["estado", "state"],
+    "observaciones": ["observacion", "observación", "observaciones", "observations"],
 }
 TRACK_TIME_HEADERS = {"t s", "tiempo s", "time s", "t"}
 TRACK_VOLTAGE_HEADERS = {"vt v", "v t v", "v t", "vt"}
@@ -175,6 +179,7 @@ def _import_one(metadata: dict[str, str], points: pd.DataFrame, repository: Repo
     measurement_date = _clean(metadata.get("fecha"))
     values = {"dispositivo_id": device_id, "campana_id": campaign_id, "archivo": measurement, "fecha": measurement_date,
               "descripcion": _clean(metadata.get("descripcion")), "clase": _clean(metadata.get("clase")), "estado": _clean(metadata.get("estado")),
+              "observaciones": _clean(metadata.get("observaciones")),
               "measurement_hash": calculate_measurement_hash(device, measurement, measurement_date, points)}
     existing = repository.connection.execute(
         "SELECT m.id FROM mediciones m WHERE (m.dispositivo_id = ? AND m.archivo = ?) OR m.measurement_hash = ?",
@@ -200,7 +205,8 @@ def _import_one(metadata: dict[str, str], points: pd.DataFrame, repository: Repo
     stats["duplicados_evitados"] += int(not created) + max(0, len(points) - added_points)
 
 
-def _import_frames(frames: list[tuple[str, pd.DataFrame]], repository: Repository, duplicate_mode: str = "renombrar") -> dict:
+def _import_frames(frames: list[tuple[str, pd.DataFrame]], repository: Repository, duplicate_mode: str = "renombrar",
+                   metadata_overrides: dict[str, dict[str, str]] | None = None) -> dict:
     stats = {"mediciones_nuevas": 0, "mediciones_actualizadas": 0, "ya_existentes": 0, "duplicados_evitados": 0, "puntos_nuevos": 0}
     errors = []
     catalog = _metadata_catalog(frames)
@@ -211,6 +217,7 @@ def _import_frames(frames: list[tuple[str, pd.DataFrame]], repository: Repositor
             if not points.empty:
                 catalog_metadata = catalog.get(_measurement_key(metadata.get("medicion", sheet_name)), {})
                 metadata = {**catalog_metadata, **metadata}
+                metadata.update((metadata_overrides or {}).get(sheet_name, {}))
                 if metadata.get("campana") == "sin asignar" and catalog_metadata.get("campana"):
                     metadata["campana"] = catalog_metadata["campana"]
                 _import_one(metadata, points, repository, stats, duplicate_mode)
@@ -297,10 +304,68 @@ def import_measurement(uploaded_file: BinaryIO, repository: Repository, duplicat
     return _import_frames([(name, frame)], repository, duplicate_mode)
 
 
+def _rar_measurement_metadata(member_name: str) -> dict[str, str]:
+    path = PurePosixPath(member_name)
+    match = re.match(r"^(2ndn\d+)[-_ ]?(.*)$", path.stem, flags=re.IGNORECASE)
+    if not match:
+        raise ValueError("nombre de medición 2ndn no reconocido")
+    folder_dates = re.findall(r"(?<!\d)(20\d{2}-\d{2}-\d{2})(?!\d)", member_name)
+    campaign = match.group(2).strip("-_ ") or "sin asignar"
+    return {
+        "dispositivo": extract_device(match.group(1)),
+        "campana": campaign,
+        "medicion": member_name,
+        "fecha": folder_dates[-1] if folder_dates else "",
+        "descripcion": "Importada desde archivo RAR",
+    }
+
+
+def import_rar(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: str = "conservar") -> dict:
+    try:
+        import rarfile
+    except ImportError as error:
+        raise ValueError("falta la dependencia rarfile para importar archivos RAR") from error
+    if shutil.which("bsdtar") is None:
+        raise ValueError("para descomprimir RAR instala bsdtar (libarchive) en el sistema")
+
+    raw = uploaded_file.read()
+    try:
+        archive = rarfile.RarFile(io.BytesIO(raw))
+        members = [info for info in archive.infolist()
+                   if not info.is_dir() and PurePosixPath(info.filename).suffix.lower() == ".ri"
+                   and PurePosixPath(info.filename).name.lower().startswith("2ndn")]
+        if not members:
+            raise ValueError("el RAR no contiene archivos .ri con nombre 2ndn")
+        frames = []
+        metadata = {}
+        errors = []
+        for member in members:
+            try:
+                extracted = subprocess.run(
+                    ["bsdtar", "-xOf", "-", member.filename], input=raw, capture_output=True, check=True
+                )
+                content = extracted.stdout
+                frame = pd.read_csv(io.BytesIO(content), sep=r"[,;\t ]+", engine="python", header=None,
+                                    comment="#", encoding_errors="replace")
+                frames.append((member.filename, frame))
+                metadata[member.filename] = _rar_measurement_metadata(member.filename)
+            except (OSError, ValueError, pd.errors.ParserError, subprocess.CalledProcessError) as error:
+                errors.append({"Archivo": member.filename, "Fila": "-", "Problema": str(error)})
+    except rarfile.Error as error:
+        raise ValueError(f"no se pudo leer el RAR: {error}") from error
+    summary = _import_frames(frames, repository, duplicate_mode, metadata)
+    summary["errores"].extend(errors)
+    summary["ignorados"] = len(summary["errores"])
+    summary["archivos_seleccionados"] = len(members)
+    return summary
+
+
 def detect_input_type(uploaded_file: BinaryIO) -> str:
     name = getattr(uploaded_file, "name", "").lower()
     if name.endswith((".xlsx", ".xlsm", ".xls")):
         return "excel"
     if name.endswith(".ri"):
         return "medicion"
+    if name.endswith(".rar"):
+        return "rar"
     return "desconocido"

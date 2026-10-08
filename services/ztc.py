@@ -32,7 +32,7 @@ def analyze_curves(curves: list[pd.DataFrame], temperatures: list[float] | None 
     upper = min(values.max() for values, _ in prepared)
     if lower >= upper:
         raise ValueError("las mediciones no tienen un intervalo de tension comun")
-    samples = np.linspace(lower, upper, max(200, len(curves) * 50))
+    samples = np.linspace(lower, upper, max(1000, len(curves) * 200))
     currents = np.vstack([np.interp(samples, values, current) for values, current in prepared])
     spread = currents.max(axis=0) - currents.min(axis=0)
     mean_current = currents.mean(axis=0)
@@ -150,6 +150,6 @@ def analyze_curves(curves: list[pd.DataFrame], temperatures: list[float] | None 
     iztc = float(np.mean([np.interp(vt, values, current) for values, current in prepared]))
     error_at_vt = float(np.interp(vt, samples, relative_error))
     combined_at_vt = float(np.interp(vt, samples, combined_score))
-    dispersion = pd.DataFrame({"v": samples, "dispersion": spread, "d_i_d_t": slope, "relative_error": relative_error, "slope_component": slope_component, "relative_component": relative_component, "combined_score": combined_score, "combined_score_at_vt": combined_at_vt})
+    dispersion = pd.DataFrame({"v": samples, "current": mean_current, "dispersion": spread, "d_i_d_t": slope, "relative_error": relative_error, "slope_component": slope_component, "relative_component": relative_component, "combined_score": combined_score, "combined_score_at_vt": combined_at_vt})
     dispersion.attrs["crossing_candidates"] = crossing_candidates
     return ResultadoZTC(vt, iztc, len(curves), method, error_at_vt), dispersion

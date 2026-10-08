@@ -21,6 +21,15 @@ def _device_parts(name: str) -> tuple[str, str, str]:
     return value.upper(), "", value.upper()
 
 
+def _same_value(left: Any, right: Any) -> bool:
+    try:
+        if pd.isna(left) and pd.isna(right):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return left == right
+
+
 class Repository:
     """Persistence boundary; UI and services do not depend on SQL details."""
 
@@ -88,7 +97,7 @@ class Repository:
                 self.last_measurement_updated = True
             updates = {
                 key: value for key, value in values.items()
-                if key in {"fecha", "descripcion", "clase", "estado", "measurement_hash"}
+                if key in {"fecha", "descripcion", "clase", "estado", "observaciones", "measurement_hash"}
                 and value not in (None, "", "nan", "NaT")
                 and not current[key]
             }
@@ -99,8 +108,8 @@ class Repository:
                 self.last_measurement_updated = True
             return measurement_id, False
         cursor = self.connection.execute(
-            """INSERT INTO mediciones(dispositivo_id, campana_id, archivo, fecha, descripcion, clase, estado, measurement_hash)
-               VALUES (:dispositivo_id, :campana_id, :archivo, :fecha, :descripcion, :clase, :estado, :measurement_hash)""",
+                """INSERT INTO mediciones(dispositivo_id, campana_id, archivo, fecha, descripcion, clase, estado, observaciones, measurement_hash)
+                    VALUES (:dispositivo_id, :campana_id, :archivo, :fecha, :descripcion, :clase, :estado, :observaciones, :measurement_hash)""",
             values,
         )
         return int(cursor.lastrowid), True
@@ -109,7 +118,12 @@ class Repository:
         rows = {(measurement_id, float(row.v), float(row.i)) for row in points.itertuples()}
         before = self.connection.total_changes
         self.connection.executemany("INSERT OR IGNORE INTO puntos(medicion_id, v, i) VALUES (?, ?, ?)", rows)
-        return self.connection.total_changes - before
+        added = self.connection.total_changes - before
+        if added:
+            campaign = self.connection.execute("SELECT campana_id FROM mediciones WHERE id = ?", (measurement_id,)).fetchone()
+            if campaign:
+                self._invalidate_ztc([int(campaign["campana_id"])])
+        return added
 
     def add_track(self, values: dict[str, Any]) -> tuple[int, bool]:
         existing = self.connection.execute(
@@ -196,14 +210,26 @@ class Repository:
             sql += "m.eliminado = 0"
         return self._query(sql + " ORDER BY m.id", params)
 
-    def iv_measurements(self, campaign_id: int | None = None, include_deleted: bool = False) -> pd.DataFrame:
+    def set_measurement_deleted(self, measurement_id: int, deleted: bool) -> int | None:
+        current = self.connection.execute("SELECT campana_id, eliminado FROM mediciones WHERE id = ?", (measurement_id,)).fetchone()
+        if current is None:
+            return None
+        if int(current["eliminado"]) != int(deleted):
+            self._invalidate_ztc([int(current["campana_id"])])
+        self.connection.execute("UPDATE mediciones SET eliminado = ? WHERE id = ?", (int(deleted), measurement_id))
+        return int(current["campana_id"])
+
+    def iv_measurements(self, campaign_id: int | None = None, include_deleted: bool = False,
+                        include_unaccepted: bool = False) -> pd.DataFrame:
         sql = """SELECT m.*, (1 - m.eliminado) AS activa, d.nombre AS dispositivo, c.numero AS campana
                   FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
                   JOIN campanas c ON c.id=m.campana_id
                   WHERE EXISTS (SELECT 1 FROM puntos p WHERE p.medicion_id=m.id)"""
-        params: tuple = ()
         if not include_deleted:
             sql += " AND m.eliminado = 0"
+        if not include_unaccepted:
+            sql += " AND m.aceptada = 1"
+        params: tuple = ()
         if campaign_id is not None:
             sql += " AND m.campana_id = ?"
             params = (campaign_id,)
@@ -217,11 +243,11 @@ class Repository:
             f"""SELECT m.*, (1 - m.eliminado) AS activa, d.nombre AS dispositivo, c.numero AS campana
                 FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
                 JOIN campanas c ON c.id=m.campana_id
-                WHERE m.dispositivo_id IN ({placeholders}) {'' if include_deleted else 'AND m.eliminado = 0'} ORDER BY d.nombre, c.numero, m.archivo""",
+                WHERE m.aceptada = 1 AND m.dispositivo_id IN ({placeholders}) {'' if include_deleted else 'AND m.eliminado = 0'} ORDER BY d.nombre, c.numero, m.archivo""",
             tuple(device_ids),
         )
 
-    def measurements_for_campaigns(self, campaign_ids: list[int]) -> pd.DataFrame:
+    def measurements_for_campaigns(self, campaign_ids: list[int], include_deleted: bool = False) -> pd.DataFrame:
         if not campaign_ids:
             return pd.DataFrame()
         placeholders = ",".join("?" for _ in campaign_ids)
@@ -229,12 +255,22 @@ class Repository:
             f"""SELECT m.*, (1 - m.eliminado) AS activa, d.nombre AS dispositivo, c.numero AS campana
                 FROM mediciones m JOIN dispositivos d ON d.id=m.dispositivo_id
                 JOIN campanas c ON c.id=m.campana_id
-                WHERE m.campana_id IN ({placeholders}) {'' if include_deleted else 'AND m.eliminado = 0'} ORDER BY d.nombre, c.numero, m.archivo""",
+                WHERE m.aceptada = 1 AND m.campana_id IN ({placeholders}) {'' if include_deleted else 'AND m.eliminado = 0'} ORDER BY d.nombre, c.numero, m.archivo""",
             tuple(campaign_ids),
         )
 
     def points(self, measurement_id: int) -> pd.DataFrame:
         return self._query("SELECT v, i FROM puntos WHERE medicion_id = ? ORDER BY v", (measurement_id,))
+
+    def replace_points(self, measurement_id: int, points: pd.DataFrame) -> None:
+        clean = points[["v", "i"]].copy()
+        clean["v"] = pd.to_numeric(clean["v"], errors="coerce")
+        clean["i"] = pd.to_numeric(clean["i"], errors="coerce")
+        clean = clean.dropna().drop_duplicates().reset_index(drop=True)
+        if len(clean) < 2:
+            raise ValueError("la medición necesita al menos 2 puntos V/I válidos")
+        self.connection.execute("DELETE FROM puntos WHERE medicion_id = ?", (measurement_id,))
+        self.add_points(measurement_id, clean)
 
     def all_points(self) -> pd.DataFrame:
         return self._query("""SELECT p.*, m.archivo, m.campana_id, d.nombre AS dispositivo, c.numero AS campana
@@ -270,22 +306,53 @@ class Repository:
 
     def update_measurement_metadata(self, measurement_id: int, values: dict[str, Any]) -> None:
         values = dict(values)
+        if bool(values.get("aceptada", False)):
+            values["caso_no_aceptacion"] = ""
         if "activa" in values:
             values["eliminado"] = int(not bool(values.pop("activa")))
-        allowed = {"dispositivo_id", "campana_id", "archivo", "fecha", "descripcion", "clase", "estado", "eliminado"}
+        allowed = {"dispositivo_id", "campana_id", "archivo", "fecha", "descripcion", "clase", "estado",
+               "eliminado", "observaciones", "aceptada", "caso_no_aceptacion"}
         updates = {key: value for key, value in values.items() if key in allowed}
         if not updates:
             return
+        current = self.connection.execute("SELECT * FROM mediciones WHERE id = ?", (measurement_id,)).fetchone()
+        if current is None:
+            return
+        analysis_fields = {"campana_id", "archivo", "fecha", "descripcion", "clase", "estado", "aceptada", "eliminado"}
+        invalidates_analysis = any(
+            key in analysis_fields and not _same_value(current[key], value)
+            for key, value in updates.items()
+        )
         assignments = ", ".join(f"{key} = :{key}" for key in updates)
         updates["id"] = measurement_id
         self.connection.execute(f"UPDATE mediciones SET {assignments} WHERE id = :id", updates)
+        if invalidates_analysis:
+            campaign_ids = {int(current["campana_id"])}
+            new_campaign_id = updates.get("campana_id")
+            if new_campaign_id is not None:
+                campaign_ids.add(int(new_campaign_id))
+            self._invalidate_ztc(list(campaign_ids))
 
-    def set_measurement_deleted(self, measurement_id: int, deleted: bool) -> int | None:
-        row = self.connection.execute("SELECT campana_id FROM mediciones WHERE id = ?", (measurement_id,)).fetchone()
-        if row is None:
-            return None
-        self.connection.execute("UPDATE mediciones SET eliminado = ? WHERE id = ?", (int(deleted), measurement_id))
-        return int(row["campana_id"])
+    def set_measurements_acceptance(self, measurement_ids: list[int], accepted: bool, case_name: str = "") -> None:
+        if not measurement_ids:
+            return
+        placeholders = ",".join("?" for _ in measurement_ids)
+        affected = self.connection.execute(
+            f"SELECT DISTINCT campana_id FROM mediciones WHERE aceptada != ? AND id IN ({placeholders})",
+            (int(accepted), *measurement_ids),
+        ).fetchall()
+        self._invalidate_ztc([int(row["campana_id"]) for row in affected])
+        self.connection.execute(
+            f"UPDATE mediciones SET aceptada = ?, caso_no_aceptacion = ? WHERE id IN ({placeholders})",
+            (int(accepted), "" if accepted else case_name.strip(), *measurement_ids),
+        )
+
+    def _invalidate_ztc(self, campaign_ids: list[int]) -> None:
+        campaign_ids = list(set(campaign_ids))
+        if not campaign_ids:
+            return
+        placeholders = ",".join("?" for _ in campaign_ids)
+        self.connection.execute(f"DELETE FROM analisis_ztc WHERE campana_id IN ({placeholders})", campaign_ids)
 
     def save_workbench_view(self, name: str, configuration: dict[str, Any]) -> None:
         self.connection.execute(

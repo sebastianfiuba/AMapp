@@ -24,6 +24,18 @@ def initialize_database(path: Path | str = DATABASE_PATH) -> None:
             )
         if "eliminado" not in columns:
             connection.execute("ALTER TABLE mediciones ADD COLUMN eliminado INTEGER NOT NULL DEFAULT 0 CHECK(eliminado IN (0, 1))")
+            if "eliminada" in columns:
+                connection.execute("UPDATE mediciones SET eliminado = eliminada")
+        if "observaciones" not in columns:
+            connection.execute("ALTER TABLE mediciones ADD COLUMN observaciones TEXT")
+        if "aceptada" not in columns:
+            connection.execute("ALTER TABLE mediciones ADD COLUMN aceptada INTEGER NOT NULL DEFAULT 1")
+        if "caso_no_aceptacion" not in columns:
+            connection.execute("ALTER TABLE mediciones ADD COLUMN caso_no_aceptacion TEXT")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mediciones_aceptacion_caso "
+            "ON mediciones(aceptada, caso_no_aceptacion)"
+        )
         device_columns = {row["name"] for row in connection.execute("PRAGMA table_info(dispositivos)")}
         if "tag" not in device_columns:
             connection.execute("ALTER TABLE dispositivos ADD COLUMN tag TEXT")

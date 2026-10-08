@@ -5,6 +5,12 @@ CURVE_COLORS = ("#0c7285", "#bd7b19", "#c34d46", "#4f6d7a", "#6b5b95", "#4d8b5f"
 ZTC_COLOR = "#a61b29"
 
 
+def format_axes(figure):
+    figure.update_xaxes(showgrid=True, zeroline=True, automargin=True, nticks=9, tickformat=".6g")
+    figure.update_yaxes(showgrid=True, zeroline=True, automargin=True, nticks=9, tickformat=".6g")
+    return figure
+
+
 def style_figure(figure, height: int = 560, right_margin: int = 30):
     figure.update_layout(
         height=height,
@@ -14,6 +20,7 @@ def style_figure(figure, height: int = 560, right_margin: int = 30):
         plot_bgcolor="#111111",
         font={"family": "Source Sans 3, sans-serif", "color": "#ffffff"},
     )
+    format_axes(figure)
     return figure
 
 

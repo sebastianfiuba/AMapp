@@ -1,89 +1,119 @@
 # AMapp
 
-Aplicación Streamlit para importar, almacenar y visualizar mediciones eléctricas I-V y tracks Vt de dispositivos electrónicos.
+Aplicación Streamlit para importar, revisar y comparar mediciones eléctricas I-V y Track Vt por dispositivo y campaña. Incluye control de calidad de curvas y análisis ZTC.
 
-## Instalación local
+## Instalación
 
 ```bash
 python -m venv .venv
-# Windows: .venv\Scripts\activate
 # Linux/macOS: source .venv/bin/activate
+# Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Formato Excel
+Para leer RAR se necesita `bsdtar` (libarchive) disponible en `PATH`, además de la dependencia Python `rarfile` instalada desde `requirements.txt`. En Debian/Ubuntu: `sudo apt install libarchive-tools`. En macOS: `brew install libarchive`.
 
-El archivo `.xlsx` debe contener una hoja plana con las columnas obligatorias `dispositivo`, `campaña` (o `campana`), `medición` (o `medicion`), `V` e `I`. Cada fila es un punto; las filas con el mismo dispositivo, campaña y medición forman una curva. Se aceptan alias en inglés (`device`, `campaign`, `measurement`, `voltage`, `current`). Son opcionales `fecha`, `descripcion`, `clase` y `estado`.
+## Navegación
 
-Las mediciones tienen además el flag `eliminado`. No borra puntos ni metadatos: las excluye de las consultas y cálculos activos, y se puede activar o quitar desde `Importar / Exportar` -> `Visualizar base de datos` -> `Mediciones`. Al guardar un cambio en ese flag, las campañas afectadas recalculan automáticamente su ZTC; si ya no quedan al menos dos temperaturas válidas, se elimina el resultado guardado.
+La barra superior divide la aplicación en cuatro secciones:
 
-Las filas inválidas se informan sin detener la importación. Si una medición ya existe, se conserva y la nueva se importa automáticamente con un nombre alternativo como `M1 (X)` o `M1 (X2)`. En ningún caso se borra la medición ni sus metadatos.
+- **Dashboard:** métricas de la base, curvas por dispositivo y analista contextual.
+- **Análisis automático:** calcula ZTC por campaña para las mediciones aceptadas y activas, y compara campañas/dispositivos.
+- **Análisis manual:** abre el Workbench con comparador, vista por dispositivo, matching, prototipo de dosis absorbida y ZTC manual.
+- **Datos:** pestañas de Mediciones y de Importar / Exportar.
 
-También se aceptan libros con hojas de mediciones exportadas por el instrumento. Las hojas con columnas `V` e `I` se importan como curvas I-V. Las hojas con bloques `t [s]` y `Vt [V]` se importan como Track Vt, separados por dispositivo y canal. Los Track Vt se visualizan y exportan, pero no participan todavía en el análisis ZTC.
+El analista del Dashboard puede usar Ollama local, sin API externa. Instala Ollama, ejecuta `ollama pull qwen2.5:0.5b` y la app intentará conectarse a `http://127.0.0.1:11434`. `OLLAMA_HOST` y `OLLAMA_MODEL` permiten cambiar endpoint y modelo. Si Ollama no está disponible, se usa el análisis determinista de la base.
 
-La identificación de dispositivos es genérica: se toma el primer bloque numérico posterior a un prefijo que contenga letras, se guarda el `tag`, el `numero` y el nombre canónico. Las hojas que no sean I-V ni Track Vt se conservan en `Sin clasificar` para revisión y exportación posterior.
+### Mediciones
 
-## Uso
+- **I-V:** filtra dispositivo, campaña, estado activo y aceptación; busca metadatos, compara curvas, muestra alertas de ruido, permite editar metadata/puntos y activa o desactiva una medición.
+- **Track Vt:** selecciona dispositivos, canales y Tracks; muestra Vt frente a tiempo y sus puntos.
+- **Aceptación:** selecciona varias mediciones y las marca como no aceptadas bajo un mismo caso. Las rechazadas quedan agrupadas por caso y se pueden reaceptar en lote o individualmente.
 
-1. Subir el Excel desde `Importar / Exportar`.
-2. Seleccionar dispositivo, campaña y medición en `Mediciones`.
-3. Consultar las curvas y ejecutar `Analisis ZTC`.
-4. Descargar la base y resultados desde `Importar / Exportar`.
+`aceptada` y `eliminado` son estados distintos. Rechazar no borra puntos ni metadatos; desactivar (`eliminado = 1`) tampoco los borra. Ambos estados se excluyen por defecto de exploraciones y cálculos I-V, pero se pueden revisar desde sus controles. Aceptación y eliminación se pueden editar desde el editor central de metadata.
 
-La interfaz se organiza en cuatro secciones superiores: `Dashboard` muestra el estado
-de la base y un chat contextual para consultar mediciones y resultados; `Análisis
-automático` contiene el ZTC automático; `Análisis manual` contiene el Workbench; y
-`Datos` reúne los visores de mediciones y `Importar / Exportar`. La base SQLite y su
-esquema permanecen sin cambios.
+El control I-V estima residuos locales de una curva respecto de sus vecinos dentro de la campaña. Marca `REVISAR ruido`, `OK` o `Sin puntaje (<9 puntos)`; el umbral robusto por campaña es `max(0.02, mediana + 6 × 1.4826 × MAD)`. Es una alerta orientativa: no rechaza ni elimina automáticamente la medición.
 
-El analista del Dashboard puede usar Ollama local sin API ni costo por consulta.
-Instala Ollama y ejecuta `ollama pull qwen2.5:0.5b`; la app lo detecta en
-`http://127.0.0.1:11434`. Se puede cambiar el endpoint con `OLLAMA_HOST` y el modelo
-con `OLLAMA_MODEL`. Si Ollama no está disponible, las consultas siguen usando el
-análisis determinista de las mediciones.
+### Workbench
 
-La navegación separa `I-V`, `Track Vt` y `Análisis ZTC`. El menú `Workbench` incluye un comparador de múltiples dispositivos y campañas, un explorador de todas las curvas I-V y Track Vt de un dispositivo, y un panel de matching para reasignar una medición a la campaña correcta y exportar el estado en CSV.
+- **Comparador:** filtra curvas por dispositivo, campaña, estado y metadata; guarda vistas y compara I-V y Tracks relacionados.
+- **Barridos térmicos:** compara barridos con temperatura identificable entre una campaña de referencia y campañas de otros dispositivos.
+- **Dispositivo:** consulta mediciones y Tracks; permite editar el nombre del dispositivo, campañas y metadata de mediciones.
+- **Matching:** reasigna mediciones a campañas del mismo dispositivo y agrupa mediciones I-V con Tracks Vt del mismo dispositivo.
+- **Dosis absorbida:** prototipo que interpola VT a una corriente objetivo dentro del rango medido; no extrapola.
+- **ZTC manual:** calcula una campaña, deja editar metadata y curvas y compara resultados respecto de una medición de referencia.
 
-`Análisis ZTC` trabaja únicamente con barridos que tienen una temperatura numérica identificable en el nombre o metadatos. Acepta formatos como `T20`, `temp 20`, `20 °C` y `36 grados`; excluye `sin temp`, `TXX`, `temperatura` sin número y nombres sin temperatura.
+### Importar / Exportar
 
-Para cada campaña se calcula y muestra un único resultado combinado:
+Admite Excel, `.ri` individual y `.rar`. La vista de base permite filtrar tablas, editar metadata y exportar la tabla visible como CSV. La exportación Excel contiene las entidades y puntos de la base. La comprobación de integridad informa posibles duplicados; no los elimina automáticamente.
 
-- El componente de pendiente `dI/dT` interpola linealmente las curvas en el intervalo de tensión común y ajusta la corriente contra la temperatura para cada `VT`.
-- El componente de error relativo usa `max(I)-min(I)` dividido por la corriente media absoluta.
-- El score combinado evalúa cruces de `dI/dT` y cruces entre pares de barridos. Cada candidato considera la dispersión absoluta de todas las curvas, el error relativo, la pendiente local y la estabilidad del tramo entre candidatos vecinos. No se impone un filtro de corriente objetivo.
+## Pipelines de datos
 
-La aplicación usa un objetivo `combinado` como resultado ZTC principal: normaliza dispersión absoluta, error relativo y `|dI/dT|` con escalas robustas y elige candidatos con estabilidad local y en el tramo que representan. Así puede conservar un cruce localizado entre dos temperaturas cuando las otras curvas también permanecen próximas, sin imponer una corriente objetivo. La vista de Evolución permite elegir un único dispositivo, guardar el conjunto de campañas, ver la progresión de `I ZTC` y consultar la dispersión de todas las campañas seleccionadas en un dashboard de dos columnas. La comparación automática entre dispositivos vive dentro de `Análisis ZTC` y entrega una tabla y gráficos seleccionables para revisión manual.
+```mermaid
+flowchart LR
+    A[Excel / RI / RAR] --> B[Detección de formato]
+    B --> C[Normalizar metadatos y puntos]
+    C --> D{Contenido reconocido}
+    D -->|V e I| E[Medición I-V]
+    D -->|t y Vt| F[Track Vt]
+    D -->|Otra hoja Excel| G[Sin clasificar]
+    E --> H[Repositorio SQLite]
+    F --> H
+    G --> H
+    H --> I[Revisión de calidad y aceptación]
+    I --> J[Consultas I-V aceptadas y activas]
+    J --> K[ZTC / comparación]
+    H --> L[Excel / CSV]
+```
 
-Falsos positivos conocidos y corregidos: `sin temp` antes podía tomar el número de campaña como temperatura; `TXX` no representa una temperatura numérica; `temperatura` sola tampoco alcanza. Todos quedan fuera del análisis hasta que se agregue un valor explícito.
+### Excel
 
-El flujo actual es semiautomático: el cálculo genera resultados y métricas comparables, mientras que el usuario puede revisar cada curva, su dispersión y los dos métodos. Esto deja preparada una futura separación entre cálculo manual de detalle, análisis automático exploratorio y validación manual final.
+Una hoja plana puede usar las columnas obligatorias `dispositivo`, `campana`/`campaña`, `medicion`/`medición`, `V` e `I`; cada fila es un punto. También se aceptan alias comunes en inglés: `device`, `campaign`, `measurement`, `voltage`, `current`. Son opcionales `fecha`, `descripcion`, `clase`, `estado` y `observaciones`.
 
-El cálculo combinado ajusta `I(V,T)` por regresión lineal en temperatura para cada tensión común. Para elegir entre varios cruces de `dI/dT = 0`, usa la estabilidad local de la pendiente y el error relativo de las curvas alrededor del cruce, en vez de evaluar únicamente el punto exacto donde la pendiente interpolada vale cero. La corriente se conserva en amperes internamente y solo se convierte a µA al mostrarla. No hay datos de mediciones incluidos en el repositorio, por lo que los casos concretos de 300 µA y 30 µA deben revisarse importando esas curvas y mirando la tabla de candidatos y la dispersión local.
+Los libros del instrumento se recorren hoja por hoja. Columnas V/I forman mediciones; bloques `t`/`t [s]` y `Vt`/`Vt [V]` forman Tracks separados por dispositivo/canal. Hojas que no coinciden con estos formatos se guardan en `Sin clasificar`. Los errores detectados aparecen en el resumen de importación.
+
+### RI y RAR
+
+Un `.ri` individual se lee como texto tabular y necesita columnas V/I reconocibles. El RAR se inspecciona sin extraer el árbol completo; en esta iteración solo se procesan miembros `.ri` cuyo nombre base empieza por `2ndn`, sin distinguir mayúsculas. Los demás tipos y nombres se ignoran.
+
+En un nombre como `2ndn14postcañon3.ri`, `2ndn14` identifica el dispositivo (`2NDN14`) y `postcañon3` la campaña. La última carpeta `YYYY-MM-DD` aporta la fecha y se conserva la ruta interna como nombre del archivo para distinguir carpetas distintas. El importador RAR usa política de conservar duplicados: volver a subir el mismo RAR no crea otra curva.
+
+### Duplicados y aceptación
+
+Para Excel y `.ri` individual la interfaz usa política de renombrar: una coincidencia se importa con un nombre alternativo (`M1 (X)`, `M1 (X2)`, etc.) sin reemplazar la curva existente. El RAR usa política de conservar para que sus reimportaciones sean idempotentes. La detección compara hash de dispositivo/archivo/fecha/puntos y, como alternativa, dispositivo y nombre de archivo. Los puntos I-V y Track tienen restricciones de unicidad.
+
+Las mediciones existentes y nuevas empiezan aceptadas. El rechazo masivo escribe `aceptada = 0` y el valor `caso_no_aceptacion`; reaceptar limpia el caso. Las consultas normales de análisis omiten no aceptadas y eliminadas. Las tablas y exportaciones completas mantienen estos registros para trazabilidad.
+
+Si cambian aceptación, eliminación, puntos o metadata que alimenta temperatura/campaña, se invalida el resultado ZTC persistido de las campañas afectadas. Al editar desde el editor central, las campañas afectadas se recalculan; si ya no cumplen los requisitos, se elimina el resultado anterior.
+
+## Análisis
+
+### ZTC
+
+ZTC requiere al menos dos curvas aceptadas y activas con temperaturas numéricas distintas identificables en nombre o metadata. Reconoce `T20`, `temp 20`, `20 °C` y `36 grados`; `sin temp`, `TXX` y `temperatura` sin número no son temperaturas válidas. Los Tracks Vt se visualizan, pero todavía no participan en ZTC.
+
+Las curvas se interpolan linealmente en el intervalo de voltaje común. Para cada VT se estima `dI/dT` por regresión lineal. El error relativo es `(I_max - I_min) / max(|I_media|, 1e-15 A)`. El score por voltaje combina 50% de dispersión normalizada, 25% de error relativo normalizado y 25% de `|dI/dT|` normalizada. Los candidatos incluyen cruces de pendiente y cruces entre pares de barridos a temperaturas distintas. Cada candidato pondera 60% estabilidad local y 40% estabilidad del tramo vecino; se selecciona el menor score estable. La pantalla manual separa error, pendiente y score en gráficos, marca VT elegido y permite comparar cada medición contra una referencia.
+
+La sección automática muestra los resultados ZTC disponibles por dispositivo/campaña. El análisis automático independiente de VT y el análisis automático de Track Vt siguen pendientes. No se aplica un filtro fijo de corriente objetivo.
+
+### Comparación de referencia
+
+Para cada curva se obtiene el punto individual de mínimo `|I|`. La tabla informa VT e I individuales, diferencias absolutas y porcentuales respecto del punto de la medición elegida como referencia.
 
 ## Arquitectura y persistencia
 
-La interfaz (`ui`), servicios (`services`) y persistencia (`database`) están separadas. `database/repository.py` es el límite de acceso a datos para facilitar una futura migración a PostgreSQL o Supabase.
+`app.py` inicializa la base y enruta las cuatro secciones. `ui/` presenta pantallas; `services/` implementa importación, análisis y asistente; `database/repository.py` concentra consultas/escrituras; `database/schema.sql` define tablas y `database/db.py` migra esquemas existentes. `models/` contiene modelos del dominio y `utils/` utilidades.
 
-El MVP usa SQLite en `data/mediciones.db`, excluido de Git. En Streamlit Community Cloud el filesystem no es almacenamiento persistente de producción: los datos pueden perderse al reiniciar o redeplegar. Para producción, sustituir el repositorio por una base remota.
+Las entidades principales son dispositivos, campañas, mediciones, puntos I-V, Tracks, puntos Track, resultados ZTC, grupos, relaciones de campaña y datos sin clasificar. Las mediciones incluyen metadata, observaciones, aceptación/caso y estado activo/eliminado. El editor central se comparte entre las vistas para mantener las escrituras por el repositorio.
 
-## GitHub
+La base local es SQLite en `data/mediciones.db`, excluida de Git. En Streamlit Community Cloud el filesystem no es persistente para producción; se necesita una base remota para conservar datos entre reinicios.
+
+## Desarrollo y publicación
 
 ```bash
-git init
-git add .
-git commit -m "Crear MVP AMapp"
-git branch -M main
-git remote add origin https://github.com/USUARIO/REPOSITORIO.git
-git push -u origin main
+python -m compileall -q app.py database services ui utils
+python -m pytest
 ```
 
-## Deploy en Streamlit Community Cloud
-
-1. Crear el repositorio en GitHub y subir el proyecto.
-2. Entrar en [share.streamlit.io](https://share.streamlit.io/) con GitHub.
-3. Elegir `New app`.
-4. Seleccionar el repositorio, branch `main` y archivo principal `app.py`.
-5. Pulsar `Deploy`.
-
-Cloud instalará automáticamente `requirements.txt`. No hay secretos necesarios; para futuras credenciales usar `st.secrets`. La app también arranca localmente con `streamlit run app.py`.
+Ejecuta pruebas de importación sobre una base temporal, nunca sobre la base real sin respaldo. Para desplegar la aplicación, configura el repositorio GitHub en Streamlit Community Cloud con `app.py` como archivo principal. Ollama es opcional; la aplicación tiene fallback local determinista.

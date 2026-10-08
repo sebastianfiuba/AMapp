@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from services.measurements import extract_temperature, temperature_measurements
-from ui.charts import CURVE_COLORS, campaign_context, chart_downloads, iv_chart, style_figure, track_chart
+from ui.charts import CURVE_COLORS, campaign_context, chart_downloads, format_axes, iv_chart, style_figure, track_chart
 from ui.measurement_editor import recalculate_campaigns, render_measurement_editor
 from ui.theme import banner
 from ui.ztc import render_panel as render_ztc_panel
@@ -173,6 +173,7 @@ def _render_thermal_device_comparison(repository):
         rows.append({"dispositivo": campaign.dispositivo, "campaña": campaign.numero, "barridos térmicos": len(thermal)})
     style_figure(figure)
     figure.update_layout(xaxis_title="Voltaje [V]", yaxis_title="Corriente [A]", hovermode="x unified", legend_title="Dispositivo | Campaña | Medición | Temperatura")
+    format_axes(figure)
     st.plotly_chart(figure, width="stretch")
     st.download_button("Exportar comparación térmica (HTML)", figure.to_html(include_plotlyjs="cdn").encode("utf-8"), "comparacion_barridos_termicos.html", "text/html", key="thermal_comparison_export")
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
