@@ -12,7 +12,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Para leer RAR se necesita `bsdtar` (libarchive) disponible en `PATH`, además de la dependencia Python `rarfile` instalada desde `requirements.txt`. En Debian/Ubuntu: `sudo apt install libarchive-tools`. En macOS: `brew install libarchive`.
+El lector de RAR usa `rarfile` y `libarchive-tools`. En Streamlit Community Cloud, `packages.txt` instala `libarchive-tools` en el entorno de la aplicación automáticamente; quien usa la aplicación no tiene que instalar herramientas. Para ejecutar la app localmente, el entorno de desarrollo también debe contar con `bsdtar` (libarchive).
 
 ## Navegación
 

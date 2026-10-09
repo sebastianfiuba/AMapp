@@ -3,8 +3,6 @@ from __future__ import annotations
 import hashlib
 import io
 import re
-import shutil
-import subprocess
 from pathlib import PurePosixPath
 from typing import BinaryIO
 
@@ -325,8 +323,6 @@ def import_rar(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: 
         import rarfile
     except ImportError as error:
         raise ValueError("falta la dependencia rarfile para importar archivos RAR") from error
-    if shutil.which("bsdtar") is None:
-        raise ValueError("para descomprimir RAR instala bsdtar (libarchive) en el sistema")
 
     raw = uploaded_file.read()
     try:
@@ -341,15 +337,12 @@ def import_rar(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: 
         errors = []
         for member in members:
             try:
-                extracted = subprocess.run(
-                    ["bsdtar", "-xOf", "-", member.filename], input=raw, capture_output=True, check=True
-                )
-                content = extracted.stdout
+                content = archive.read(member)
                 frame = pd.read_csv(io.BytesIO(content), sep=r"[,;\t ]+", engine="python", header=None,
                                     comment="#", encoding_errors="replace")
                 frames.append((member.filename, frame))
                 metadata[member.filename] = _rar_measurement_metadata(member.filename)
-            except (OSError, ValueError, pd.errors.ParserError, subprocess.CalledProcessError) as error:
+            except (rarfile.Error, OSError, ValueError, pd.errors.ParserError) as error:
                 errors.append({"Archivo": member.filename, "Fila": "-", "Problema": str(error)})
     except rarfile.Error as error:
         raise ValueError(f"no se pudo leer el RAR: {error}") from error
