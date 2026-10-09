@@ -348,6 +348,7 @@ def import_rar(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: 
     if shutil.which("bsdtar") is None:
         raise ValueError("falta bsdtar para leer RAR5; verifica la instalación de libarchive-tools en el entorno de la app")
 
+    uploaded_file.seek(0)
     raw = uploaded_file.read()
     frames = []
     metadata = {}

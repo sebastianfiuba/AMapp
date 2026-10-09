@@ -46,17 +46,25 @@ class RarImportTests(unittest.TestCase):
 
     def test_rar_import_uses_bsdtar_to_extract_selected_member(self):
         extracted_content = b"V I\n1 2\n3 4\n"
+        archive_content = b"fake archive"
         process_result = type("ProcessResult", (), {
             "returncode": 0,
             "stdout": extracted_content,
             "stderr": b"",
         })()
+        uploaded_file = io.BytesIO(archive_content)
+        uploaded_file.seek(5)
+
+        def extract_member(command, **_):
+            self.assertEqual(Path(command[2]).read_bytes(), archive_content)
+            return process_result
+
         with (
             patch("rarfile.RarFile", FakeRarArchive),
-            patch("services.excel_import.subprocess.run", return_value=process_result) as run,
+            patch("services.excel_import.subprocess.run", side_effect=extract_member) as run,
             patch("services.excel_import.shutil.which", return_value="/usr/bin/bsdtar"),
         ):
-            summary = import_rar(io.BytesIO(b"fake archive"), self.repository)
+            summary = import_rar(uploaded_file, self.repository)
 
         self.assertEqual(summary["mediciones_nuevas"], 1)
         self.assertEqual(summary["puntos_nuevos"], 2)
