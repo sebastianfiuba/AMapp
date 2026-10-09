@@ -3,7 +3,10 @@ from __future__ import annotations
 import hashlib
 import io
 import re
-from pathlib import PurePosixPath
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path, PurePosixPath
 from typing import BinaryIO
 
 import pandas as pd
@@ -318,32 +321,56 @@ def _rar_measurement_metadata(member_name: str) -> dict[str, str]:
     }
 
 
+def _read_rar_member(archive_path: Path, member_name: str, expected_size: int) -> bytes:
+    try:
+        extracted = subprocess.run(
+            ["bsdtar", "-xOf", str(archive_path), "--", member_name],
+            capture_output=True,
+            check=False,
+        )
+    except OSError as error:
+        raise ValueError(f"no se pudo ejecutar bsdtar: {error}") from error
+    if extracted.returncode:
+        detail = extracted.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(detail or f"bsdtar terminó con código {extracted.returncode}")
+    if len(extracted.stdout) != expected_size:
+        raise ValueError(
+            f"extracción incompleta: se esperaban {expected_size} bytes y se recibieron {len(extracted.stdout)}"
+        )
+    return extracted.stdout
+
+
 def import_rar(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: str = "conservar") -> dict:
     try:
         import rarfile
     except ImportError as error:
         raise ValueError("falta la dependencia rarfile para importar archivos RAR") from error
+    if shutil.which("bsdtar") is None:
+        raise ValueError("falta bsdtar para leer RAR5; verifica la instalación de libarchive-tools en el entorno de la app")
 
     raw = uploaded_file.read()
+    frames = []
+    metadata = {}
+    errors = []
     try:
-        archive = rarfile.RarFile(io.BytesIO(raw))
-        members = [info for info in archive.infolist()
-                   if not info.is_dir() and PurePosixPath(info.filename).suffix.lower() == ".ri"
-                   and PurePosixPath(info.filename).name.lower().startswith("2ndn")]
-        if not members:
-            raise ValueError("el RAR no contiene archivos .ri con nombre 2ndn")
-        frames = []
-        metadata = {}
-        errors = []
-        for member in members:
-            try:
-                content = archive.read(member)
-                frame = pd.read_csv(io.BytesIO(content), sep=r"[,;\t ]+", engine="python", header=None,
-                                    comment="#", encoding_errors="replace")
-                frames.append((member.filename, frame))
-                metadata[member.filename] = _rar_measurement_metadata(member.filename)
-            except (rarfile.Error, OSError, ValueError, pd.errors.ParserError) as error:
-                errors.append({"Archivo": member.filename, "Fila": "-", "Problema": str(error)})
+        with tempfile.TemporaryDirectory(prefix="amapp-rar-") as directory:
+            archive_path = Path(directory) / "upload.rar"
+            archive_path.write_bytes(raw)
+            with rarfile.RarFile(str(archive_path)) as archive:
+                members = [info for info in archive.infolist()
+                           if not info.is_dir() and PurePosixPath(info.filename).suffix.lower() == ".ri"
+                           and PurePosixPath(info.filename).name.lower().startswith("2ndn")]
+                if not members:
+                    raise ValueError("el RAR no contiene archivos .ri con nombre 2ndn")
+                for member in members:
+                    try:
+                        content = _read_rar_member(archive_path, member.filename, member.file_size)
+                        frame = pd.read_csv(io.BytesIO(content), sep=r"[,;\t ]+", engine="python", header=None,
+                                            comment="#", encoding_errors="replace")
+                        frames.append((member.filename, frame))
+                        metadata[member.filename] = _rar_measurement_metadata(member.filename)
+                    except (OSError, ValueError, pd.errors.ParserError) as error:
+                        errors.append({"Archivo": member.filename, "Fila": "-", "Problema": str(error)})
     except rarfile.Error as error:
         raise ValueError(f"no se pudo leer el RAR: {error}") from error
     summary = _import_frames(frames, repository, duplicate_mode, metadata)

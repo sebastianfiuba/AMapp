@@ -12,7 +12,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-El lector de RAR usa `rarfile` y `libarchive-tools`. En Streamlit Community Cloud, `packages.txt` instala `libarchive-tools` en el entorno de la aplicación automáticamente; quien usa la aplicación no tiene que instalar herramientas. Para ejecutar la app localmente, el entorno de desarrollo también debe contar con `bsdtar` (libarchive).
+El lector usa `rarfile` para inspeccionar el índice y `bsdtar` (`libarchive-tools`) para descomprimir miembros RAR5. En Streamlit Community Cloud, `packages.txt` instala `libarchive-tools` en el entorno de la aplicación automáticamente; quien usa la aplicación no tiene que instalar herramientas. Para ejecutar la app localmente, el entorno de desarrollo también debe contar con `bsdtar` (libarchive).
 
 ## Navegación
 
