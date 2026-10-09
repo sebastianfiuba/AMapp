@@ -6,6 +6,7 @@ from database.repository import Repository
 import ui.dashboard as dashboard
 import ui.import_export as import_export
 import ui.measurements as measurements
+import ui.vt_analysis as vt_analysis
 import ui.workbench as workbench
 import ui.ztc as ztc
 from ui.theme import apply_theme
@@ -36,7 +37,11 @@ for item in sections:
 if section == "Dashboard":
     dashboard.render(repository)
 elif section == "Análisis automático":
-    ztc.render_automatic(repository)
+    automatic_tabs = st.tabs(["ZTC automático", "VT automático (ΔVT)"])
+    with automatic_tabs[0]:
+        ztc.render_automatic(repository)
+    with automatic_tabs[1]:
+        vt_analysis.render_automatic(repository)
 elif section == "Análisis manual":
     workbench.render_manual(repository)
 else:

@@ -385,9 +385,7 @@ def _render_device_comparison(repository):
             f"{row['campaña original']}: VT={row['VT combinado [V]']:.6g} V, I={row['I combinado']}"
             for _, row in device_frame.iterrows()
         ) or "Sin curvas con dos temperaturas identificables"
-        device_summaries.append({"Dispositivo": device_name, "Análisis ZTC": ztc_summary,
-                                 "Análisis VT": "Pendiente de implementación automática",
-                                 "Análisis Track Vt": "Pendiente de implementación"})
+        device_summaries.append({"Dispositivo": device_name, "Análisis ZTC": ztc_summary})
     st.subheader("Análisis automáticos por dispositivo")
     st.dataframe(pd.DataFrame(device_summaries), width="stretch", hide_index=True)
     if frame.empty:

@@ -19,8 +19,8 @@ Para leer RAR se necesita `bsdtar` (libarchive) disponible en `PATH`, además de
 La barra superior divide la aplicación en cuatro secciones:
 
 - **Dashboard:** métricas de la base, curvas por dispositivo y analista contextual.
-- **Análisis automático:** calcula ZTC por campaña para las mediciones aceptadas y activas, y compara campañas/dispositivos.
-- **Análisis manual:** abre el Workbench con comparador, vista por dispositivo, matching, prototipo de dosis absorbida y ZTC manual.
+- **Análisis automático:** incluye pestañas de ZTC y ΔVT. El análisis ΔVT automático usa todas las mediciones I-V activas y aceptadas de un dispositivo.
+- **Análisis manual:** abre el Workbench con comparador, vista por dispositivo, matching, prototipo de dosis absorbida, ZTC manual y análisis ΔVT manual con filtros de medición.
 - **Datos:** pestañas de Mediciones y de Importar / Exportar.
 
 El analista del Dashboard puede usar Ollama local, sin API externa. Instala Ollama, ejecuta `ollama pull qwen2.5:0.5b` y la app intentará conectarse a `http://127.0.0.1:11434`. `OLLAMA_HOST` y `OLLAMA_MODEL` permiten cambiar endpoint y modelo. Si Ollama no está disponible, se usa el análisis determinista de la base.
@@ -43,6 +43,7 @@ El control I-V estima residuos locales de una curva respecto de sus vecinos dent
 - **Matching:** reasigna mediciones a campañas del mismo dispositivo y agrupa mediciones I-V con Tracks Vt del mismo dispositivo.
 - **Dosis absorbida:** prototipo que interpola VT a una corriente objetivo dentro del rango medido; no extrapola.
 - **ZTC manual:** calcula una campaña, deja editar metadata y curvas y compara resultados respecto de una medición de referencia.
+- **Análisis VT (ΔVT):** compara VT a una corriente objetivo o a varias corrientes entre mediciones I-V del mismo dispositivo. El análisis manual permite filtrar por campaña, texto, estado, fecha y clase, y seleccionar las curvas; el automático usa las curvas activas y aceptadas. Ambos ofrecen un filtro de temperatura del barrido: por defecto priorizan 26 °C, luego 28 °C, y también permiten elegir otra temperatura o analizar todas. Comparan contra una medición de referencia, interpolan linealmente y no extrapolan. No utilizan Tracks Vt.
 
 ### Importar / Exportar
 
@@ -95,7 +96,7 @@ ZTC requiere al menos dos curvas aceptadas y activas con temperaturas numéricas
 
 Las curvas se interpolan linealmente en el intervalo de voltaje común. Para cada VT se estima `dI/dT` por regresión lineal. El error relativo es `(I_max - I_min) / max(|I_media|, 1e-15 A)`. El score por voltaje combina 50% de dispersión normalizada, 25% de error relativo normalizado y 25% de `|dI/dT|` normalizada. Los candidatos incluyen cruces de pendiente y cruces entre pares de barridos a temperaturas distintas. Cada candidato pondera 60% estabilidad local y 40% estabilidad del tramo vecino; se selecciona el menor score estable. La pantalla manual separa error, pendiente y score en gráficos, marca VT elegido y permite comparar cada medición contra una referencia.
 
-La sección automática muestra los resultados ZTC disponibles por dispositivo/campaña. El análisis automático independiente de VT y el análisis automático de Track Vt siguen pendientes. No se aplica un filtro fijo de corriente objetivo.
+La sección automática muestra los resultados ZTC disponibles por dispositivo/campaña y el análisis ΔVT por corriente. El análisis ΔVT usa exclusivamente curvas I-V y es independiente de Track Vt. La corriente objetivo puede ser única o múltiple; no se extrapola fuera del rango de corriente de cada curva.
 
 ### Comparación de referencia
 

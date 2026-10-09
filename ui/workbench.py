@@ -10,6 +10,7 @@ from services.measurements import extract_temperature, temperature_measurements
 from ui.charts import CURVE_COLORS, campaign_context, chart_downloads, format_axes, iv_chart, style_figure, track_chart
 from ui.measurement_editor import recalculate_campaigns, render_measurement_editor
 from ui.theme import banner
+from ui.vt_analysis import render_manual as render_manual_vt_analysis
 from ui.ztc import render_panel as render_ztc_panel
 
 
@@ -349,7 +350,7 @@ def render(repository, include_ztc: bool = True):
     banner("Mesa de trabajo", "Workbench", "Armá comparaciones, revisá un dispositivo y conectá campañas con la base.")
     tab_names = ["Comparador", "Dispositivo", "Matching", "Dosis absorbida"]
     if include_ztc:
-        tab_names.append("Análisis ZTC")
+        tab_names.extend(["Análisis ZTC", "Análisis VT (ΔVT)"])
     tabs = st.tabs(tab_names)
     comparison, device, matching, dose = tabs[:4]
     with comparison:
@@ -360,6 +361,9 @@ def render(repository, include_ztc: bool = True):
         _render_matching(repository)
     with dose:
         _render_absorbed_dose(repository)
+    if include_ztc:
+        with tabs[5]:
+            render_manual_vt_analysis(repository)
 
 
 def render_manual(repository):
