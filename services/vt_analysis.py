@@ -17,6 +17,14 @@ def available_temperatures(measurements: pd.DataFrame) -> list[float]:
     return sorted(temperatures)
 
 
+def filter_by_temperature(measurements: pd.DataFrame, temperature: float) -> pd.DataFrame:
+    if measurements.empty:
+        return measurements.copy()
+    return measurements[
+        measurements.apply(lambda row: extract_temperature(row) == temperature, axis=1)
+    ].copy()
+
+
 def preferred_temperature(temperatures: list[float]) -> float | None:
     for preferred in (26.0, 28.0):
         if preferred in temperatures:

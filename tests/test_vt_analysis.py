@@ -7,6 +7,7 @@ from services.vt_analysis import (
     average_vt_by_device_mode,
     available_temperatures,
     delta_vt_at_currents,
+    filter_by_temperature,
     parse_target_currents,
     preferred_temperature,
 )
@@ -106,6 +107,17 @@ class VtAnalysisTests(unittest.TestCase):
         self.assertEqual(preferred_temperature([28.0, 35.0]), 28.0)
         self.assertIsNone(preferred_temperature([35.0]))
         self.assertIsNone(preferred_temperature([]))
+
+    def test_filters_measurements_by_temperature(self):
+        measurements = pd.DataFrame([
+            {"id": 1, "archivo": "M1_T26", "campana": "post horno"},
+            {"id": 2, "archivo": "M2_T28", "campana": "post horno"},
+            {"id": 3, "archivo": "M3", "campana": "post curie"},
+        ])
+
+        result = filter_by_temperature(measurements, 26.0)
+
+        self.assertEqual(result.id.tolist(), [1])
 
 
 if __name__ == "__main__":

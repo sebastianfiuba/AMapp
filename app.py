@@ -37,11 +37,17 @@ for item in sections:
 if section == "Dashboard":
     dashboard.render(repository)
 elif section == "Análisis automático":
-    automatic_tabs = st.tabs(["ZTC automático", "VT automático (ΔVT)"])
+    automatic_tabs = st.tabs([
+        "ZTC automático",
+        "VT automático (ΔVT)",
+        "VT automático por modo y dispositivo",
+    ])
     with automatic_tabs[0]:
         ztc.render_automatic(repository)
     with automatic_tabs[1]:
         vt_analysis.render_automatic(repository)
+    with automatic_tabs[2]:
+        vt_analysis.render_automatic_by_mode(repository)
 elif section == "Análisis manual":
     workbench.render_manual(repository)
 else:

@@ -8,10 +8,10 @@ from services.vt_analysis import (
     average_vt_by_device_mode,
     available_temperatures,
     delta_vt_at_currents,
+    filter_by_temperature,
     parse_target_currents,
     preferred_temperature,
 )
-from services.measurements import extract_temperature
 from ui.theme import banner
 
 
@@ -39,6 +39,10 @@ def render_manual(repository) -> None:
         _render_manual_device(repository)
     with tabs[1]:
         _render_all_devices_average(repository)
+
+
+def render_automatic_by_mode(repository) -> None:
+    _render_all_devices_average(repository)
 
 
 def _render_manual_device(repository) -> None:
@@ -145,9 +149,7 @@ def _render_all_devices_average(repository) -> None:
         key="global_vt_temperature",
     )
     if selected_temperature is not None:
-        measurements = measurements[
-            measurements.apply(lambda row: extract_temperature(row) == selected_temperature, axis=1)
-        ]
+        measurements = filter_by_temperature(measurements, selected_temperature)
     current = float(st.number_input(
         "Corriente objetivo [A]",
         value=0.00017,
@@ -206,12 +208,7 @@ def _render_current_modes(repository, measurements: pd.DataFrame, key: str) -> N
         help="Si existe un barrido a 26 °C se prioriza; si no, se usa 28 °C. También podés elegir otra temperatura o analizar todas.",
     )
     if selected_temperature is not None:
-        measurements = measurements[
-            measurements.apply(
-                lambda row: extract_temperature(row) == selected_temperature,
-                axis=1,
-            )
-        ]
+        measurements = filter_by_temperature(measurements, selected_temperature)
         st.caption(f"Se analizarán los barridos identificados a {selected_temperature:g} °C.")
     if measurements.empty:
         st.info("No hay mediciones a la temperatura seleccionada.")

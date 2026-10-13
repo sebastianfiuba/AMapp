@@ -19,7 +19,7 @@ El lector usa `rarfile` para inspeccionar el índice y `bsdtar` (`libarchive-too
 La barra superior divide la aplicación en cuatro secciones:
 
 - **Dashboard:** métricas de la base, curvas por dispositivo y analista contextual.
-- **Análisis automático:** incluye pestañas de ZTC y ΔVT. El análisis ΔVT automático usa todas las mediciones I-V activas y aceptadas de un dispositivo.
+- **Análisis automático:** incluye ZTC, ΔVT para un dispositivo y una pestaña global de VT por modo. Esta última compara automáticamente todos los dispositivos y promedia las mediciones activas y aceptadas de cada dispositivo/campaña.
 - **Análisis manual:** abre el Workbench con comparador, vista por dispositivo, matching, prototipo de dosis absorbida, ZTC manual y análisis ΔVT manual con filtros de medición.
 - **Datos:** pestañas de Mediciones y de Importar / Exportar.
 
@@ -43,7 +43,7 @@ El control I-V estima residuos locales de una curva respecto de sus vecinos dent
 - **Matching:** reasigna mediciones a campañas del mismo dispositivo y agrupa mediciones I-V con Tracks Vt del mismo dispositivo.
 - **Dosis absorbida:** prototipo que interpola VT a una corriente objetivo dentro del rango medido; no extrapola.
 - **ZTC manual:** calcula una campaña, deja editar metadata y curvas y compara resultados respecto de una medición de referencia.
-- **Análisis VT (ΔVT):** compara VT a una corriente objetivo o a varias corrientes entre mediciones I-V del mismo dispositivo. El análisis manual permite filtrar por campaña, texto, estado, fecha y clase, y seleccionar las curvas; el automático usa las curvas activas y aceptadas. La pestaña de promedio global compara todos los dispositivos entre campañas/modos seleccionados, promedia repeticiones del mismo dispositivo y modo, y muestra tanto el resumen como cada medición. Los análisis ofrecen un filtro de temperatura del barrido: por defecto priorizan 26 °C, luego 28 °C, y también permiten elegir otra temperatura o analizar todas. Interpolan linealmente y no extrapolan. No utilizan Tracks Vt.
+- **Análisis VT (ΔVT):** compara VT a una corriente objetivo o a varias corrientes entre mediciones I-V del mismo dispositivo. El análisis manual permite filtrar por campaña, texto, estado, fecha y clase, y seleccionar las curvas; el automático para un dispositivo y el global por modo usan las curvas activas y aceptadas. El global compara todos los dispositivos entre campañas/modos seleccionados, promedia repeticiones del mismo dispositivo y modo, y muestra el resumen y cada medición. Los análisis ofrecen un filtro de temperatura del barrido: por defecto priorizan 26 °C, luego 28 °C, y también permiten elegir otra temperatura o analizar todas. Interpolan linealmente y no extrapolan. No utilizan Tracks Vt.
 
 ### Importar / Exportar
 
