@@ -218,17 +218,21 @@ def _render_dispersion_dashboard(repository, measurements, dispersion: pd.DataFr
         st.plotly_chart(figure, width="stretch")
         st.caption("Error relativo = dispersión / max(|I media|, 1e-15 A). El score combina 50% de dispersión normalizada, 25% de error relativo y 25% de |dI/dT|. Se evalúan cruces de pendiente y de pares de temperaturas; la selección pondera estabilidad local (60%) y del tramo (40%). La línea roja marca el VT ZTC.")
     with right:
-        st.dataframe(pd.DataFrame({"Dato": ["VT mínimo error relativo", "VT dI/dT", "Error relativo mínimo", "Temperaturas"],
-                                   "Valor": [float(dispersion.loc[dispersion.relative_error.idxmin(), "v"]), float(dispersion.v.iloc[np.abs(dispersion.d_i_d_t).argmin()]),
-                                              f"{dispersion.relative_error.min():.3%}", dispersion.temperatures.iloc[0]]}), hide_index=True, width="stretch")
+        metrics = pd.DataFrame({"Dato": ["VT mínimo error relativo", "VT dI/dT", "Error relativo mínimo", "Temperaturas"],
+                                "Valor": [float(dispersion.loc[dispersion.relative_error.idxmin(), "v"]), float(dispersion.v.iloc[np.abs(dispersion.d_i_d_t).argmin()]),
+                                          f"{dispersion.relative_error.min():.3%}", dispersion.temperatures.iloc[0]]})
+        metrics["Valor"] = metrics["Valor"].map(str)
+        st.dataframe(metrics, hide_index=True, width="stretch")
         labels = {f"{row.archivo} | {extract_temperature(row):g} °C": int(row.id) for row in measurements.itertuples()}
         selected = st.selectbox("Medición de referencia y detalle", list(labels), key=f"dispersion_measurement_{title}")
         selected_points = repository.points(labels[selected])
         selected_row = measurements[measurements.id == labels[selected]].iloc[0]
         detail_figure = iv_chart(measurements[measurements.id == labels[selected]], {int(selected_row.id): selected_points}, ztc=ztc)
         st.plotly_chart(detail_figure, width="stretch", key=f"dispersion_measurement_chart_{title}")
-        st.dataframe(pd.DataFrame({"Característica": ["Archivo", "Temperatura", "Puntos", "V mínimo", "V máximo", "I mínimo", "I máximo"],
-                                   "Valor": [selected_row.archivo, extract_temperature(selected_row), len(selected_points), selected_points.v.min(), selected_points.v.max(), selected_points.i.min(), selected_points.i.max()]}), hide_index=True, width="stretch")
+        details = pd.DataFrame({"Característica": ["Archivo", "Temperatura", "Puntos", "V mínimo", "V máximo", "I mínimo", "I máximo"],
+                                "Valor": [selected_row.archivo, extract_temperature(selected_row), len(selected_points), selected_points.v.min(), selected_points.v.max(), selected_points.i.min(), selected_points.i.max()]})
+        details["Valor"] = details["Valor"].map(str)
+        st.dataframe(details, hide_index=True, width="stretch")
         _render_reference_comparison(repository, measurements, int(selected_row.id), f"reference_errors_{title}")
 
 

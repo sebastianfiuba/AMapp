@@ -8,7 +8,7 @@ import pandas as pd
 
 from database.db import get_connection, initialize_database
 from database.repository import Repository
-from services.excel_import import import_rar, _read_rar_member
+from services.excel_import import import_rar, rar_device_groups, _read_rar_member
 
 
 class FakeRarMember:
@@ -19,8 +19,17 @@ class FakeRarMember:
         return False
 
 
+class FakeRarMember2(FakeRarMember):
+    filename = "2nd14_postrad.ri"
+
+
+class FakeRarMember3(FakeRarMember):
+    filename = "MOSFET7_post_horno.ri"
+
+
 class FakeRarArchive:
     member = FakeRarMember()
+    members = [member]
 
     def __init__(self, _):
         pass
@@ -32,7 +41,7 @@ class FakeRarArchive:
         return False
 
     def infolist(self):
-        return [self.member]
+        return self.members
 
 
 class RarImportTests(unittest.TestCase):
@@ -77,6 +86,66 @@ class RarImportTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(command[:2], ["bsdtar", "-xOf"])
         self.assertEqual(command[-2:], ["--", FakeRarMember.filename])
+
+    def test_rar_device_selection_matches_complete_device_not_prefix(self):
+        process_result = type("ProcessResult", (), {
+            "returncode": 0,
+            "stdout": b"V I\n1 2\n3 4\n",
+            "stderr": b"",
+        })()
+        with (
+            patch.object(FakeRarArchive, "members", [FakeRarMember(), FakeRarMember2()]),
+            patch("rarfile.RarFile", FakeRarArchive),
+            patch("services.excel_import.subprocess.run", return_value=process_result) as run,
+            patch("services.excel_import.shutil.which", return_value="/usr/bin/bsdtar"),
+        ):
+            summary = import_rar(io.BytesIO(b"fake archive"), self.repository, selected_devices={"2ND14"})
+
+        self.assertEqual(summary["archivos_seleccionados"], 1)
+        self.assertEqual(run.call_args.args[0][-2:], ["--", FakeRarMember2.filename])
+        measurements = self.repository.iv_measurements()
+        self.assertEqual(measurements.dispositivo.tolist(), ["2ND14"])
+
+    def test_rar_device_groups_separate_similar_families(self):
+        with (
+            patch.object(FakeRarArchive, "members", [FakeRarMember(), FakeRarMember2()]),
+            patch("rarfile.RarFile", FakeRarArchive),
+        ):
+            groups = rar_device_groups(io.BytesIO(b"fake archive"))
+
+        self.assertEqual(groups, {"2ND": [(14, "2ND14")], "2NDN": [(14, "2NDN14")]})
+
+    def test_rar_device_groups_include_other_device_families(self):
+        with (
+            patch.object(FakeRarArchive, "members", [FakeRarMember(), FakeRarMember3()]),
+            patch("rarfile.RarFile", FakeRarArchive),
+        ):
+            groups = rar_device_groups(io.BytesIO(b"fake archive"))
+
+        self.assertEqual(groups, {"2NDN": [(14, "2NDN14")], "MOSFET": [(7, "MOSFET7")]})
+
+    def test_rar_import_filter_selects_device_from_other_family(self):
+        process_result = type("ProcessResult", (), {
+            "returncode": 0,
+            "stdout": b"V I\n1 2\n3 4\n",
+            "stderr": b"",
+        })()
+        with (
+            patch.object(FakeRarArchive, "members", [FakeRarMember(), FakeRarMember3()]),
+            patch("rarfile.RarFile", FakeRarArchive),
+            patch("services.excel_import.subprocess.run", return_value=process_result) as run,
+            patch("services.excel_import.shutil.which", return_value="/usr/bin/bsdtar"),
+        ):
+            summary = import_rar(
+                io.BytesIO(b"fake archive"),
+                self.repository,
+                selected_devices={"MOSFET7"},
+            )
+
+        self.assertEqual(summary["archivos_seleccionados"], 1)
+        self.assertEqual(run.call_args.args[0][-2:], ["--", FakeRarMember3.filename])
+        measurements = self.repository.iv_measurements()
+        self.assertEqual(measurements.dispositivo.tolist(), ["MOSFET7"])
 
     def test_rar_member_extraction_rejects_truncated_output(self):
         process_result = type("ProcessResult", (), {

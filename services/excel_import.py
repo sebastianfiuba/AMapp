@@ -305,20 +305,65 @@ def import_measurement(uploaded_file: BinaryIO, repository: Repository, duplicat
     return _import_frames([(name, frame)], repository, duplicate_mode)
 
 
-def _rar_measurement_metadata(member_name: str) -> dict[str, str]:
+def _rar_name_parts(member_name: str) -> tuple[str, int, str, str] | None:
     path = PurePosixPath(member_name)
-    match = re.match(r"^(2ndn\d+)[-_ ]?(.*)$", path.stem, flags=re.IGNORECASE)
+    match = re.match(r"^(.+?[A-Za-z])(\d+)(.*)$", path.stem)
     if not match:
-        raise ValueError("nombre de medición 2ndn no reconocido")
+        return None
+    family, number, _ = match.groups()
+    suffix = match.group(3)
+    return family.upper(), int(number), extract_device(f"{family}{number}"), suffix
+
+
+def _rar_device_parts(member_name: str) -> tuple[str, int, str] | None:
+    parts = _rar_name_parts(member_name)
+    if parts is None:
+        return None
+    family, number, device, _ = parts
+    return family, number, device
+
+
+def _rar_measurement_metadata(member_name: str) -> dict[str, str]:
+    parts = _rar_name_parts(member_name)
+    if parts is None:
+        raise ValueError("nombre de dispositivo y número no reconocido")
+    _, _, device, suffix = parts
     folder_dates = re.findall(r"(?<!\d)(20\d{2}-\d{2}-\d{2})(?!\d)", member_name)
-    campaign = match.group(2).strip("-_ ") or "sin asignar"
+    campaign = suffix.strip("-_ ") or "sin asignar"
     return {
-        "dispositivo": extract_device(match.group(1)),
+        "dispositivo": device,
         "campana": campaign,
         "medicion": member_name,
         "fecha": folder_dates[-1] if folder_dates else "",
         "descripcion": "Importada desde archivo RAR",
     }
+
+
+def rar_device_groups(uploaded_file: BinaryIO) -> dict[str, list[tuple[int, str]]]:
+    try:
+        import rarfile
+    except ImportError as error:
+        raise ValueError("falta la dependencia rarfile para importar archivos RAR") from error
+
+    uploaded_file.seek(0)
+    raw = uploaded_file.read()
+    groups: dict[str, set[tuple[int, str]]] = {}
+    try:
+        with tempfile.TemporaryDirectory(prefix="amapp-rar-") as directory:
+            archive_path = Path(directory) / "upload.rar"
+            archive_path.write_bytes(raw)
+            with rarfile.RarFile(str(archive_path)) as archive:
+                for member in archive.infolist():
+                    if member.is_dir() or PurePosixPath(member.filename).suffix.lower() != ".ri":
+                        continue
+                    parts = _rar_device_parts(PurePosixPath(member.filename).name)
+                    if parts is None:
+                        continue
+                    family, number, device = parts
+                    groups.setdefault(family, set()).add((number, device))
+    except rarfile.Error as error:
+        raise ValueError(f"no se pudo leer el RAR: {error}") from error
+    return {family: sorted(devices) for family, devices in sorted(groups.items())}
 
 
 def _read_rar_member(archive_path: Path, member_name: str, expected_size: int) -> bytes:
@@ -340,7 +385,12 @@ def _read_rar_member(archive_path: Path, member_name: str, expected_size: int) -
     return extracted.stdout
 
 
-def import_rar(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: str = "conservar") -> dict:
+def import_rar(
+    uploaded_file: BinaryIO,
+    repository: Repository,
+    duplicate_mode: str = "conservar",
+    selected_devices: set[str] | None = None,
+) -> dict:
     try:
         import rarfile
     except ImportError as error:
@@ -350,6 +400,8 @@ def import_rar(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: 
 
     uploaded_file.seek(0)
     raw = uploaded_file.read()
+    if selected_devices is not None:
+        selected_devices = {device.upper() for device in selected_devices}
     frames = []
     metadata = {}
     errors = []
@@ -360,9 +412,12 @@ def import_rar(uploaded_file: BinaryIO, repository: Repository, duplicate_mode: 
             with rarfile.RarFile(str(archive_path)) as archive:
                 members = [info for info in archive.infolist()
                            if not info.is_dir() and PurePosixPath(info.filename).suffix.lower() == ".ri"
-                           and PurePosixPath(info.filename).name.lower().startswith("2ndn")]
+                           and _rar_device_parts(info.filename) is not None
+                           and (selected_devices is None or _rar_device_parts(info.filename)[2] in selected_devices)]
                 if not members:
-                    raise ValueError("el RAR no contiene archivos .ri con nombre 2ndn")
+                    if selected_devices:
+                        raise ValueError("el RAR no contiene mediciones para los dispositivos seleccionados")
+                    raise ValueError("el RAR no contiene archivos .ri con dispositivo y número reconocibles")
                 for member in members:
                     try:
                         content = _read_rar_member(archive_path, member.filename, member.file_size)

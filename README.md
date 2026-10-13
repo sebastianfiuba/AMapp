@@ -43,7 +43,7 @@ El control I-V estima residuos locales de una curva respecto de sus vecinos dent
 - **Matching:** reasigna mediciones a campañas del mismo dispositivo y agrupa mediciones I-V con Tracks Vt del mismo dispositivo.
 - **Dosis absorbida:** prototipo que interpola VT a una corriente objetivo dentro del rango medido; no extrapola.
 - **ZTC manual:** calcula una campaña, deja editar metadata y curvas y compara resultados respecto de una medición de referencia.
-- **Análisis VT (ΔVT):** compara VT a una corriente objetivo o a varias corrientes entre mediciones I-V del mismo dispositivo. El análisis manual permite filtrar por campaña, texto, estado, fecha y clase, y seleccionar las curvas; el automático usa las curvas activas y aceptadas. Ambos ofrecen un filtro de temperatura del barrido: por defecto priorizan 26 °C, luego 28 °C, y también permiten elegir otra temperatura o analizar todas. Comparan contra una medición de referencia, interpolan linealmente y no extrapolan. No utilizan Tracks Vt.
+- **Análisis VT (ΔVT):** compara VT a una corriente objetivo o a varias corrientes entre mediciones I-V del mismo dispositivo. El análisis manual permite filtrar por campaña, texto, estado, fecha y clase, y seleccionar las curvas; el automático usa las curvas activas y aceptadas. La pestaña de promedio global compara todos los dispositivos entre campañas/modos seleccionados, promedia repeticiones del mismo dispositivo y modo, y muestra tanto el resumen como cada medición. Los análisis ofrecen un filtro de temperatura del barrido: por defecto priorizan 26 °C, luego 28 °C, y también permiten elegir otra temperatura o analizar todas. Interpolan linealmente y no extrapolan. No utilizan Tracks Vt.
 
 ### Importar / Exportar
 
@@ -76,7 +76,7 @@ Los libros del instrumento se recorren hoja por hoja. Columnas V/I forman medici
 
 ### RI y RAR
 
-Un `.ri` individual se lee como texto tabular y necesita columnas V/I reconocibles. El RAR se inspecciona sin extraer el árbol completo; en esta iteración solo se procesan miembros `.ri` cuyo nombre base empieza por `2ndn`, sin distinguir mayúsculas. Los demás tipos y nombres se ignoran.
+Un `.ri` individual se lee como texto tabular y necesita columnas V/I reconocibles. El RAR se inspecciona sin extraer el árbol completo y permite importar todos los dispositivos detectados, uno solo o un rango numérico dentro de una familia; se puede filtrar la familia antes de elegir los dispositivos. Se reconoce un prefijo alfanumérico de familia seguido por un número, por ejemplo, `2nd14`, `2ndn14` o `MOSFET7`; las familias se mantienen separadas, de modo que seleccionar `2nd14` no incluye `2ndn14`.
 
 En un nombre como `2ndn14postcañon3.ri`, `2ndn14` identifica el dispositivo (`2NDN14`) y `postcañon3` la campaña. La última carpeta `YYYY-MM-DD` aporta la fecha y se conserva la ruta interna como nombre del archivo para distinguir carpetas distintas. El importador RAR usa política de conservar duplicados: volver a subir el mismo RAR no crea otra curva.
 

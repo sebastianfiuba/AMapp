@@ -94,3 +94,62 @@ def delta_vt_at_currents(repository, measurements: pd.DataFrame, currents: list[
                 "Referencia": reference_label,
             })
     return pd.DataFrame(rows), warnings
+
+
+def average_vt_by_device_mode(
+    repository,
+    measurements: pd.DataFrame,
+    current: float,
+) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+    summary_columns = [
+        "Dispositivo", "Modo / campaña", "Corriente objetivo [A]",
+        "Mediciones válidas", "VT promedio [V]", "VT mínimo [V]", "VT máximo [V]",
+    ]
+    detail_columns = ["Dispositivo", "Modo / campaña", "Medición", "VT [V]"]
+    if not np.isfinite(current):
+        raise ValueError("ingresá una corriente objetivo finita")
+    if measurements.empty:
+        return pd.DataFrame(columns=summary_columns), pd.DataFrame(columns=detail_columns), []
+    required_columns = {"id", "dispositivo", "campana", "archivo"}
+    if not required_columns.issubset(measurements.columns):
+        raise ValueError("faltan datos de dispositivo, campaña o medición")
+
+    rows = []
+    warnings = []
+    for measurement in measurements.itertuples():
+        measurement_id = int(measurement.id)
+        points = repository.points(measurement_id)
+        if points.empty:
+            warnings.append(f"{measurement.archivo}: no tiene puntos I-V.")
+            continue
+        clean = points[["v", "i"]].apply(pd.to_numeric, errors="coerce").dropna()
+        clean = clean.groupby("i", as_index=False)["v"].mean().sort_values("i")
+        if len(clean) < 2:
+            warnings.append(f"{measurement.archivo}: necesita dos corrientes distintas.")
+            continue
+        if current < clean.i.min() or current > clean.i.max():
+            warnings.append(f"{measurement.archivo}: {current:.8g} A queda fuera del rango medido.")
+            continue
+        rows.append({
+            "Dispositivo": str(measurement.dispositivo),
+            "Modo / campaña": str(measurement.campana),
+            "Medición": f"{measurement.campana} | {measurement.archivo}",
+            "VT [V]": float(np.interp(current, clean.i.to_numpy(), clean.v.to_numpy())),
+        })
+
+    details = pd.DataFrame(rows, columns=detail_columns)
+    if details.empty:
+        return pd.DataFrame(columns=summary_columns), details, warnings
+    summary = (
+        details.groupby(["Dispositivo", "Modo / campaña"], as_index=False, sort=True)
+        .agg(
+            **{
+                "Mediciones válidas": ("VT [V]", "count"),
+                "VT promedio [V]": ("VT [V]", "mean"),
+                "VT mínimo [V]": ("VT [V]", "min"),
+                "VT máximo [V]": ("VT [V]", "max"),
+            }
+        )
+    )
+    summary.insert(2, "Corriente objetivo [A]", float(current))
+    return summary[summary_columns], details, warnings

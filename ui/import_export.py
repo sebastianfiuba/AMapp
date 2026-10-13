@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 from services.excel_export import export_excel, export_integrity
-from services.excel_import import detect_input_type, import_excel, import_measurement, import_rar
+from services.excel_import import detect_input_type, import_excel, import_measurement, import_rar, rar_device_groups
 from ui.theme import banner
 from ui.measurement_editor import render_measurement_editor
 
@@ -11,16 +11,53 @@ def render(repository):
     banner("Datos y trazabilidad", "Importar / Exportar", "Cargá mediciones, revisá formatos no clasificados y descargá una copia completa.")
     uploaded = st.file_uploader("Selecciona un Excel, una medición o un RAR (.xlsx, .xls, .xlsm, .ri, .rar)", type=["xlsx", "xls", "xlsm", "ri", "rar"])
     duplicate_mode = "renombrar"
+    input_type = detect_input_type(uploaded) if uploaded else ""
+    selected_devices = None
+    if uploaded and input_type == "rar":
+        try:
+            device_groups = rar_device_groups(uploaded)
+        except ValueError as error:
+            st.error(str(error))
+        else:
+            if device_groups:
+                selection_mode = st.radio(
+                    "Dispositivos del RAR",
+                    ["Todos", "Un dispositivo", "Rango de dispositivos"],
+                    horizontal=True,
+                    key="rar_device_selection_mode",
+                )
+                if selection_mode == "Un dispositivo":
+                    family = st.selectbox("Familia", list(device_groups), key="rar_device_family")
+                    devices = device_groups[family]
+                    selected = st.selectbox("Dispositivo", [device for _, device in devices], key="rar_single_device")
+                    selected_devices = {selected}
+                elif selection_mode == "Rango de dispositivos":
+                    family = st.selectbox("Familia del rango", list(device_groups), key="rar_range_family")
+                    devices = device_groups[family]
+                    numbers = [number for number, _ in devices]
+                    if len(numbers) == 1:
+                        st.caption(f"Único dispositivo disponible: {devices[0][1]}")
+                        selected_devices = {devices[0][1]}
+                    else:
+                        first, last = st.slider(
+                            "Rango inclusivo",
+                            min_value=min(numbers),
+                            max_value=max(numbers),
+                            value=(min(numbers), max(numbers)),
+                            key=f"rar_device_range_{family}",
+                        )
+                        selected_devices = {device for number, device in devices if first <= number <= last}
+            else:
+                st.info("El RAR no contiene mediciones .ri con dispositivo y número reconocibles.")
     if uploaded and st.button("Importar datos", type="primary"):
         with st.spinner("Importando..."):
-            input_type = detect_input_type(uploaded)
             try:
                 if input_type == "excel":
                     summary = import_excel(uploaded, repository, duplicate_mode)
                 elif input_type == "medicion":
                     summary = import_measurement(uploaded, repository, duplicate_mode)
                 elif input_type == "rar":
-                    summary = import_rar(uploaded, repository)
+                    summary = import_rar(uploaded, repository, selected_devices=selected_devices)
                 else:
                     raise ValueError("tipo de archivo no reconocido; usa .xlsx, .xls, .xlsm, .ri o .rar")
             except ValueError as error:
@@ -32,7 +69,7 @@ def render(repository):
         st.write(f"Tracks Vt nuevos: {summary.get('tracks_nuevos', 0)} | Puntos Track nuevos: {summary.get('track_points_nuevos', 0)}")
         st.write(f"Hojas sin clasificar nuevas: {summary.get('sin_clasificar_nuevos', 0)}")
         if "archivos_seleccionados" in summary:
-            st.write(f"Archivos 2ndn .ri revisados: {summary['archivos_seleccionados']}")
+            st.write(f"Archivos .ri revisados: {summary['archivos_seleccionados']}")
         if summary["errores"]:
             st.warning("Algunas filas requieren revision.")
             st.dataframe(summary["errores"], width="stretch", hide_index=True)

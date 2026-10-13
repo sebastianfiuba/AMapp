@@ -5,11 +5,13 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from services.vt_analysis import (
+    average_vt_by_device_mode,
     available_temperatures,
     delta_vt_at_currents,
     parse_target_currents,
     preferred_temperature,
 )
+from services.measurements import extract_temperature
 from ui.theme import banner
 
 
@@ -32,6 +34,14 @@ def render_automatic(repository) -> None:
 
 
 def render_manual(repository) -> None:
+    tabs = st.tabs(["Comparar mediciones de un dispositivo", "Promedio por dispositivo y modo"])
+    with tabs[0]:
+        _render_manual_device(repository)
+    with tabs[1]:
+        _render_all_devices_average(repository)
+
+
+def _render_manual_device(repository) -> None:
     st.subheader("Análisis manual de VT (ΔVT)")
     st.caption("Filtrá y elegí mediciones I-V de un único dispositivo. No se usan Tracks Vt.")
     devices = repository.devices()
@@ -92,6 +102,90 @@ def render_manual(repository) -> None:
         st.info("Seleccioná al menos una medición.")
         return
     _render_current_modes(repository, selected, "manual_delta_vt")
+
+
+def _render_all_devices_average(repository) -> None:
+    st.subheader("VT promedio de todos los dispositivos por modo")
+    st.caption(
+        "Calcula VT a la misma corriente objetivo para cada medición I-V activa y aceptada. "
+        "Las mediciones del mismo dispositivo y campaña se promedian."
+    )
+    measurements = repository.iv_measurements(include_deleted=True, include_unaccepted=True)
+    if measurements.empty:
+        st.info("Todavía no hay mediciones I-V.")
+        return
+    measurements = measurements[
+        measurements.activa.astype(bool) & measurements.aceptada.astype(bool)
+    ].copy()
+    if measurements.empty:
+        st.info("No hay mediciones I-V activas y aceptadas para analizar.")
+        return
+    modes = sorted(measurements.campana.dropna().astype(str).unique(), key=str.casefold)
+    selected_modes = st.multiselect(
+        "Modos / campañas para comparar",
+        modes,
+        default=modes,
+        key="global_vt_modes",
+        help="Selecciona, por ejemplo, solo «post horno» o compara «post horno» con «post curie».",
+    )
+    if not selected_modes:
+        st.info("Seleccioná al menos un modo o campaña.")
+        return
+    measurements = measurements[measurements.campana.astype(str).isin(selected_modes)]
+    temperatures = available_temperatures(measurements)
+    temperature_options = [None, *temperatures]
+    default_temperature = preferred_temperature(temperatures)
+    selected_temperature = st.selectbox(
+        "Temperatura del barrido",
+        temperature_options,
+        index=temperature_options.index(default_temperature),
+        format_func=lambda temperature: (
+            "Sin filtro (todas las temperaturas)" if temperature is None else f"{temperature:g} °C"
+        ),
+        key="global_vt_temperature",
+    )
+    if selected_temperature is not None:
+        measurements = measurements[
+            measurements.apply(lambda row: extract_temperature(row) == selected_temperature, axis=1)
+        ]
+    current = float(st.number_input(
+        "Corriente objetivo [A]",
+        value=0.00017,
+        format="%.8g",
+        key="global_vt_current",
+    ))
+    if measurements.empty:
+        st.info("No hay mediciones para los modos y temperatura seleccionados.")
+        return
+    try:
+        summary, details, warnings = average_vt_by_device_mode(repository, measurements, current)
+    except ValueError as error:
+        st.error(str(error))
+        return
+    for warning in dict.fromkeys(warnings):
+        st.warning(warning)
+    if summary.empty:
+        st.info("No fue posible interpolar VT dentro del rango medido.")
+        return
+    st.dataframe(summary, width="stretch", hide_index=True, key="global_vt_summary")
+    figure = go.Figure()
+    for device, group in summary.groupby("Dispositivo", sort=False):
+        figure.add_trace(go.Scatter(
+            x=group["Modo / campaña"],
+            y=group["VT promedio [V]"],
+            mode="lines+markers",
+            name=device,
+            text=group["Mediciones válidas"].map(lambda count: f"{count} medición(es)"),
+            hovertemplate="%{x}<br>VT promedio: %{y:.6g} V<br>%{text}<extra>%{fullData.name}</extra>",
+        ))
+    figure.update_layout(
+        xaxis_title="Modo / campaña",
+        yaxis_title="VT promedio [V]",
+        hovermode="x unified",
+    )
+    st.plotly_chart(figure, width="stretch", key="global_vt_chart")
+    with st.expander("Ver VT de cada medición incluida"):
+        st.dataframe(details, width="stretch", hide_index=True, key="global_vt_details")
 
 
 def _render_current_modes(repository, measurements: pd.DataFrame, key: str) -> None:
